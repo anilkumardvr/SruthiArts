@@ -1,11 +1,22 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
+using SruthiArts.Data;
+using SruthiArts.Models;
 
-namespace PhoneCatalog.Pages
+namespace SruthiArts.Pages
 {
     public class IndexModel : PageModel
     {
-        public string HeroTitle => "Find your next phone";
-        public string HeroSubtitle => "20+ models · real photos · quick specs";
-        public void OnGet() { }
+        private readonly ArtDbContext _db;
+        public IndexModel(ArtDbContext db) => _db = db;
+
+        public List<Painting> Paintings { get; private set; } = new();
+
+        public async Task OnGet()
+        {
+            Paintings = await _db.Paintings
+                                 .OrderByDescending(p => p.Id)
+                                 .ToListAsync();
+        }
     }
 }

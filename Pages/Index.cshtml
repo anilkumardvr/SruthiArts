@@ -1,18 +1,33 @@
 @page
-@model PhoneCatalog.Pages.IndexModel
+@model SruthiArts.Pages.IndexModel
+@{
+    ViewData["Title"] = "Featured Paintings";
+}
+<section class="container">
+    <h1>Featured Paintings</h1>
+    <p>Welcome to Sruthi Arts – explore my aesthetic paintings!</p>
 
-<section class="hero">
-    <h2>@Model.HeroTitle</h2>
-    <p>@Model.HeroSubtitle</p>
-    <a class="btn" asp-page="/Phones/Index">Browse Phones</a>
+    @if (Model.Paintings.Count == 0)
+    {
+        <div class="empty">No paintings yet. (DB not seeded?)</div>
+    }
+    else
+    {
+        <div class="grid">
+        @foreach (var p in Model.Paintings)
+        {
+            <a class="card zoom-enter" href="/Paintings/Details?id=@p.Id">
+                <img src="@p.ImageUrl" alt="@p.Title" loading="lazy" />
+                <div class="meta">
+                    <h3>@p.Title</h3>
+                    <p>@p.Description</p>
+                    <div class="price">$@p.Price</div>
+                </div>
+            </a>
+        }
+        </div>
+    }
 </section>
 
-<section class="info">
-    <h3>What’s inside?</h3>
-    <ul>
-        <li>Real web photos</li>
-        <li>Smooth hover + click transitions</li>
-        <li>Quick specs, pricing & ratings</li>
-        <li>Review snippets on details pages</li>
-    </ul>
-</section>
+<link rel="stylesheet" href="~/css/site.css" />
+<script src="~/js/fairy.js"></script>

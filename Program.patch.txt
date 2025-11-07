@@ -1,9 +1,0 @@
-
-
-
-// Example pattern for minimal APIs / endpoints that receive {id} as string:
-app.MapGet("/phones/{id}", async (int id, IPhoneStore store) =>
-{
-    var phone = await store.GetByIdAsync(id);
-    return phone is null ? Results.NotFound() : Results.Ok(phone);
-});

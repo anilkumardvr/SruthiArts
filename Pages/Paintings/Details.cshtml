@@ -1,0 +1,28 @@
+<style>
+/* Zoom-in page transition */
+.page-enter {
+    opacity: 0;
+    transform: scale(0.96);
+    transition: opacity .35s ease, transform .35s ease;
+}
+.page-enter-active {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* Fairy dust cursor trail */
+.sparkle { position: fixed; pointer-events:none; inset:0; }
+.sparkle span {
+    position:absolute; font-size:12px; opacity:.9;
+    animation: floatUp 900ms ease-out forwards;
+}
+@@keyframes floatUp {
+    from { transform: translateY(0) scale(1); opacity: .9; }
+    to   { transform: translateY(-30px) scale(.7); opacity: 0; }
+}
+
+/* Responsive tweaks */
+@@media (max-width: 768px) {
+    .hero { flex-direction: column; }
+}
+</style>

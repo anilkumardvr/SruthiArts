@@ -1,40 +1,43 @@
+
 @{
-    var title = "Weirdo's mobile website";
+    Layout = null;
+    var title = ViewData["Title"] as string ?? "Sruthi Arts";
 }
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>@title</title>
-    <link rel="stylesheet" href="~/css/site.css" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Poppins:wght@300;400;600;800&display=swap" rel="stylesheet" />
+
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/transitions.css" asp-append-version="true" />
+
+    <style>
+        /* Minimal dark aesthetic to match your vibe */
+        html,body{background:#0b0b0f;color:#e9e9f0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+        a{color:#c8b6ff;text-decoration:none}
+        a:hover{text-decoration:underline}
+        header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,#0b0b0f 0%, rgba(11,11,15,0.6) 100%);backdrop-filter:blur(6px);border-bottom:1px solid rgba(255,255,255,.06)}
+        .wrap{max-width:1100px;margin:0 auto;padding:20px}
+        .brand{font-weight:800;letter-spacing:.04em}
+    </style>
 </head>
-<body class="bg-dark">
-    <div id="cursor-orb"></div>
-    <header class="site-header">
-        <h1 class="brand">@title</h1>
-        <nav>
-            <a asp-page="/Index">Home</a>
-            <a asp-page="/Phones/Index">Phones</a>
-        </nav>
+<body>
+    <header>
+        <div class="wrap">
+            <a class="brand" href="/">Sruthi Arts</a>
+        </div>
     </header>
 
-    <main class="container">
-        @RenderBody()
+    <!-- Transition root wraps the body content -->
+    <main id="transition-root" class="page-transition">
+        <div class="wrap">
+            @RenderBody()
+        </div>
     </main>
 
-    <footer class="site-footer">
-        <div class="social">
-            <a href="https://instagram.com" target="_blank" rel="noopener">Instagram</a>
-            <a href="https://x.com" target="_blank" rel="noopener">X (Twitter)</a>
-        </div>
-        <div>© @DateTime.Now.Year Weirdo’s</div>
-    </footer>
-
-    <script src="~/js/site.js"></script>
+    <script src="~/js/transitions.js" asp-append-version="true"></script>
     @RenderSection("Scripts", required: false)
 </body>
 </html>
