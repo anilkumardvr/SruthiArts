@@ -1,13 +1,14 @@
 {
+  "image": "/images/paintings/IMG_4746.webp",
   "title": "Lavender Skies",
   "category": "originals",
-  "image": "images/paintings/lavender-skies.svg",
-  "alt": "Layered lavender and peach sky with soft drifting clouds",
   "description": "Calm gradients and dreamy clouds.",
+  "price": 199,
+  "status": "available",
   "medium": "Oil on canvas",
   "width": 45,
   "height": 60,
-  "price": 199,
-  "status": "available",
-  "date": "2026-09-22T12:03"
+  "alt": "Layered lavender and peach sky with soft drifting clouds",
+  "date": "2026-09-22T12:03",
+  "paypalLink": ""
 }
