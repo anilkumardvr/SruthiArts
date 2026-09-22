@@ -32,9 +32,9 @@
 <main id="top">
   <section class="hero" aria-labelledby="hero-title">
     <div class="hero-copy">
-      <p class="eyebrow">Ludo boards · Clocks · Originals · Prints</p>
-      <h1 id="hero-title">Small doors into <em>quieter worlds</em></h1>
-      <p class="lede">Fairy-tale inspired pieces painted by Sruthi in the hours after work, from one-of-a-kind originals to ludo boards, clocks and prints.</p>
+      <p class="eyebrow" data-content="hero.eyebrow">Ludo boards · Clocks · Originals · Prints</p>
+      <h1 id="hero-title"><span data-content="hero.title">Small doors into</span> <em data-content="hero.titleAccent">quieter worlds</em></h1>
+      <p class="lede" data-content="hero.intro">Fairy-tale inspired pieces painted by Sruthi in the hours after work, from one-of-a-kind originals to ludo boards, clocks and prints.</p>
       <div class="hero-cta">
         <a class="btn" href="#gallery">Browse the shop</a>
         <a class="btn ghost" data-ig href="https://www.instagram.com/sruthi_artss/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor" stroke="none"/></svg> Follow on Instagram</a>
@@ -53,30 +53,33 @@
   </section>
 
   <section class="about" id="about" aria-labelledby="about-title">
-    <h2 id="about-title">About the artist</h2>
-    <div class="about-body">
+    <div class="about-head">
+      <h2 id="about-title" data-content="about.heading">About the artist</h2>
+      <img class="about-photo" id="about-photo" alt="" hidden>
+    </div>
+    <div class="about-body" id="about-body">
       <p>Hi, I’m <strong>Sruthi</strong>. I paint aesthetic, fairy-tale inspired pieces in my free time. My full-time work is software engineering, but painting is my calm space.</p>
       <p>I share and sell selected works here. If one of them speaks to you, I’d love for it to find a home with you.</p>
     </div>
   </section>
 
   <section class="buy" id="buy" aria-labelledby="buy-title">
-    <h2 id="buy-title">How to buy</h2>
-    <ol class="steps">
+    <h2 id="buy-title" data-content="buy.heading">How to buy</h2>
+    <ol class="steps" id="steps">
       <li><strong>Choose a piece</strong><span>Open anything marked Available to see its size, medium and price.</span></li>
-      <li><strong>Pay with PayPal</strong><span>Tap “Buy with PayPal” and pay by card or PayPal balance. Prices are in Canadian dollars.</span></li>
-      <li><strong>Send your address</strong><span>Message Sruthi on Instagram with the piece’s name so she can arrange delivery.</span></li>
+      <li><strong>Message Sruthi</strong><span>Send the piece’s name to @sruthi_artss on Instagram to reserve it.</span></li>
+      <li><strong>Pay and receive it</strong><span>Sruthi replies with payment details and arranges delivery.</span></li>
     </ol>
   </section>
 
   <section class="contact" id="contact" aria-labelledby="contact-title">
-    <h2 id="contact-title">Questions or commissions</h2>
+    <h2 id="contact-title" data-content="contact.heading">Questions or commissions</h2>
     <div id="contact-body" class="contact-body"></div>
   </section>
 </main>
 
 <footer class="site-footer">
-  <p>© <span id="year"></span> Sruthi Arts. All artwork is Sruthi’s own; images may not be reproduced without permission.</p>
+  <p>© <span id="year"></span> Sruthi Arts. <span data-content="footer.text">All artwork is Sruthi’s own; images may not be reproduced without permission.</span></p>
   <p><a data-ig href="https://www.instagram.com/sruthi_artss/" target="_blank" rel="noopener">Instagram</a> · <a href="admin/">Admin</a></p>
 </footer>
 
