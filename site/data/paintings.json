@@ -10,6 +10,7 @@
     {
       "id": "moonlit-garden",
       "title": "Moonlit Garden",
+      "category": "originals",
       "description": "Soft pastel garden under a silver moon.",
       "medium": "Acrylic on canvas",
       "width": 40,
@@ -22,6 +23,7 @@
     {
       "id": "lavender-skies",
       "title": "Lavender Skies",
+      "category": "originals",
       "description": "Calm gradients and dreamy clouds.",
       "medium": "Oil on canvas",
       "width": 45,
@@ -34,6 +36,7 @@
     {
       "id": "golden-forest",
       "title": "Golden Forest",
+      "category": "originals",
       "description": "Sun-drenched trees, warm tones.",
       "medium": "Mixed media",
       "width": 50,
@@ -46,6 +49,7 @@
     {
       "id": "sea-whispers",
       "title": "Sea Whispers",
+      "category": "originals",
       "description": "Aesthetic coastal blues.",
       "medium": "Watercolor",
       "width": 42,
