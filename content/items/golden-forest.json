@@ -1,13 +1,14 @@
 {
+  "image": "/images/paintings/IMG_2831.webp",
   "title": "Golden Forest",
   "category": "originals",
-  "image": "images/paintings/golden-forest.svg",
-  "alt": "Tall dark tree trunks against glowing amber and gold light",
   "description": "Sun-drenched trees, warm tones.",
+  "price": 279,
+  "status": "available",
   "medium": "Mixed media",
   "width": 50,
   "height": 70,
-  "price": 279,
-  "status": "available",
-  "date": "2026-09-22T12:02"
+  "alt": "Tall dark tree trunks against glowing amber and gold light",
+  "date": "2026-09-22T12:02",
+  "paypalLink": ""
 }
