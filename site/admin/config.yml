@@ -35,18 +35,27 @@ collections:
     icon: palette
     files:
       - name: paintings
-        label: Paintings and shop settings
+        label: Shop items and settings
         file: site/data/paintings.json
         format: json
         fields:
           - name: paintings
-            label: Paintings
-            label_singular: painting
+            label: Shop items
+            label_singular: item
             widget: list
             add_to_top: true
-            summary: "{{title}} · {{status}} · ${{price}}"
+            summary: "{{title}} · {{category}} · {{status}} · ${{price}}"
             fields:
               - { name: title, label: Title, widget: string }
+              - name: category
+                label: Category
+                widget: select
+                default: originals
+                options:
+                  - { label: Ludo boards, value: ludo-boards }
+                  - { label: Clocks, value: clocks }
+                  - { label: Originals, value: originals }
+                  - { label: Prints, value: prints }
               - name: id
                 label: Link name
                 widget: string
@@ -64,7 +73,7 @@ collections:
               - name: medium
                 label: Medium
                 widget: select
-                options: ["Acrylic on canvas", "Oil on canvas", "Watercolor", "Gouache", "Mixed media", "Ink on paper", "Pencil on paper"]
+                options: ["Acrylic on canvas", "Oil on canvas", "Watercolor", "Gouache", "Mixed media", "Ink on paper", "Pencil on paper", "Acrylic on wood", "Art print"]
               - { name: width, label: Width (cm), widget: number, value_type: int, min: 1 }
               - { name: height, label: Height (cm), widget: number, value_type: int, min: 1 }
               - { name: price, label: Price, widget: number, value_type: int, min: 0, hint: "Whole number in the shop currency, e.g. 249" }
