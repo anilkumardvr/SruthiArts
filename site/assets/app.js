@@ -1,5 +1,5 @@
-// Sruthi Arts — renders the gallery from data/paintings.json.
-// To add a painting: drop the image in images/paintings/ and add an entry to the JSON. No code changes needed.
+// Sruthi Arts — renders the shop and page text from data/shop.json.
+// shop.json is built from content/ by scripts/build-data.mjs; edit content through /admin, not this file.
 (() => {
   "use strict";
 
@@ -24,7 +24,7 @@
     { id: "originals", label: "Originals" },
     { id: "prints", label: "Prints" },
   ];
-  const state = { paintings: [], artist: {}, filter: "all", current: -1 };
+  const state = { paintings: [], artist: {}, pages: null, filter: "all", current: -1 };
   let money = (n) => `$${n}`;
 
   const spec = (p) => `${p.medium} · ${p.width} × ${p.height} cm`;
@@ -118,17 +118,34 @@
     const h = igHandle();
     document.querySelectorAll("[data-ig]").forEach((a) => { if (h) a.href = igUrl(); else a.hidden = true; });
     document.querySelectorAll("[data-ig-handle]").forEach((n) => (n.textContent = `@${h}`));
-    if (!state.artist.paypal) {
-      const [, two, three] = document.querySelectorAll(".steps li");
-      if (two) two.replaceChildren(el("strong", { text: "Message Sruthi" }), el("span", { text: `Send the painting’s name to @${h} on Instagram to reserve it.` }));
-      if (three) three.replaceChildren(el("strong", { text: "Pay and receive it" }), el("span", { text: "Sruthi replies with payment details and arranges delivery." }));
+  }
+
+  // Page text from content/pages.json. The HTML carries the same defaults, so the page reads fine before this runs.
+  const get = (obj, path) => path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
+  function renderPages() {
+    const pages = state.pages;
+    if (!pages) return;
+    document.querySelectorAll("[data-content]").forEach((n) => {
+      const v = get(pages, n.dataset.content);
+      if (typeof v === "string" && v.trim()) n.textContent = v;
+    });
+    const about = pages.about || {};
+    if (about.text) {
+      $("#about-body").replaceChildren(...about.text.split(/\n\s*\n/).map((para) => el("p", { text: para.trim() })));
+    }
+    const photo = $("#about-photo");
+    if (about.photo) { photo.src = about.photo; photo.alt = about.photoAlt || `Photo of ${state.artist.name || "the artist"}`; photo.hidden = false; }
+    const steps = (pages.buy && pages.buy.steps) || [];
+    if (steps.length) {
+      $("#steps").replaceChildren(...steps.map((st) => el("li", {}, el("strong", { text: st.title || "" }), el("span", { text: st.text || "" }))));
     }
   }
 
   function renderContact() {
     const { email } = state.artist;
     const body = $("#contact-body");
-    const parts = [el("p", { text: "For questions about a piece, custom commissions or delivery, message Sruthi directly." })];
+    const intro = (state.pages && state.pages.contact && state.pages.contact.text) || "For questions about a piece, custom commissions or delivery, message Sruthi directly.";
+    const parts = [el("p", { text: intro })];
     const links = el("div", { class: "contact-links" });
     if (igHandle()) links.append(iconLink("btn", igUrl(), IG_ICON, `Message @${igHandle()}`));
     if (email) links.append(el("a", { class: "btn ghost", href: mailto("Painting enquiry") }, "Email Sruthi"));
@@ -191,16 +208,17 @@
 
   $("#year").textContent = new Date().getFullYear();
 
-  fetch("data/paintings.json")
+  fetch("data/shop.json")
     .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then((data) => {
       state.paintings = data.paintings || [];
       state.artist = data.artist || {};
+      state.pages = data.pages || null;
       const fmt = new Intl.NumberFormat("en-CA", { style: "currency", currency: state.artist.currency || "CAD", maximumFractionDigits: 0 });
       money = (n) => fmt.format(n);
-      applyInstagram(); renderHero(); renderFilters(); renderWall(); renderContact(); openFromHash();
+      applyInstagram(); renderPages(); renderHero(); renderFilters(); renderWall(); renderContact(); openFromHash();
     })
     .catch(() => {
-      $("#wall").replaceChildren(el("li", { class: "note", text: "The paintings couldn’t load. Refresh the page to try again." }));
+      $("#wall").replaceChildren(el("li", { class: "note", text: "The shop couldn’t load. Refresh the page to try again." }));
     });
 })();
