@@ -27,6 +27,7 @@ if (data) {
     if (p.id && !/^[a-z0-9-]+$/.test(p.id)) errors.push(`${where}: id must be lowercase letters, digits and dashes (used in the page link)`);
     if (ids.has(p.id)) errors.push(`${where}: duplicate id "${p.id}"`);
     ids.add(p.id);
+    if (!["ludo-boards", "clocks", "originals", "prints"].includes(p.category)) errors.push(`${where}: category must be one of ludo-boards, clocks, originals, prints`);
     if (p.status && !["available", "sold"].includes(p.status)) errors.push(`${where}: status must be "available" or "sold"`);
     if (p.image && !existsSync(join(SITE, p.image))) errors.push(`${where}: image not found at site/${p.image}`);
     if (p.paypalLink && !/^https:\/\//.test(p.paypalLink)) errors.push(`${where}: paypalLink must start with https://`);
