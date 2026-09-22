@@ -7,3 +7,4 @@ Thumbs.db
 node_modules/
 # Local preview output
 _site/
+site/data/shop.json
