@@ -53,6 +53,7 @@ PayPal doesn't know a painting is one of a kind, so mark it **Sold** in the admi
 {
   "id": "rose-lantern",
   "title": "Rose Lantern",
+  "category": "originals",
   "description": "One or two sentences about the piece.",
   "medium": "Acrylic on canvas",
   "width": 40,
@@ -64,7 +65,7 @@ PayPal doesn't know a painting is one of a kind, so mark it **Sold** in the admi
 }
 ```
 
-`width` and `height` are in centimetres. Set `"status": "sold"` to keep a piece in the gallery while hiding its price. Each painting can be linked directly as `…/#rose-lantern`.
+`category` is one of `ludo-boards`, `clocks`, `originals` or `prints`; it decides which shop filter the item appears under. `width` and `height` are in centimetres. Set `"status": "sold"` to keep a piece in the gallery while hiding its price. Each painting can be linked directly as `…/#rose-lantern`.
 
 ## Preview locally
 
