@@ -51,7 +51,7 @@
       .filter(({ p }) => state.filter === "All" || p.medium === state.filter);
     $("#wall").replaceChildren(
       ...list.map(({ p, idx }, i) =>
-        el("li", { class: "piece", style: `--i:${i}` },
+        el("li", { class: `piece${isSold(p) ? " is-sold" : ""}`, style: `--i:${i}` },
           el("button", { type: "button", "aria-label": `View ${p.title}`, onclick: () => open(idx) },
             el("div", { class: "frame" },
               el("img", { src: p.image, alt: p.alt || p.title, loading: i < 2 ? "eager" : "lazy", width: "800", height: "1000" })
@@ -83,20 +83,46 @@
   function mailto(subject) {
     return `mailto:${state.artist.email}?subject=${encodeURIComponent(subject)}`;
   }
+  const igHandle = () => (state.artist.instagram || "").replace(/^@/, "").trim();
+  const igUrl = () => `https://www.instagram.com/${igHandle()}/`;
+  const IG_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor" stroke="none"/></svg>';
+  const PP_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M7.3 21H4.1a.5.5 0 0 1-.5-.6L6.4 3.5A.6.6 0 0 1 7 3h6.4c3.3 0 5.3 1.7 4.8 4.8-.6 3.6-3 5.3-6.4 5.3H9.9a.6.6 0 0 0-.6.5L8.4 19.3"/><path d="M19.6 8.6c.9.8 1.2 2 .9 3.6-.6 3.4-2.9 4.9-6 4.9h-1.2a.6.6 0 0 0-.6.5l-.7 3.8a.5.5 0 0 1-.5.4H9.3" opacity=".6"/></svg>';
+
+  // PayPal.me link with the price filled in, or a per-painting PayPal link if one is set.
+  function paypalUrl(p) {
+    if (p.paypalLink) return p.paypalLink;
+    const user = (state.artist.paypal || "").replace(/^https?:\/\/(www\.)?paypal\.me\//i, "").replace(/\/.*$/, "").trim();
+    return user ? `https://www.paypal.me/${user}/${p.price}${state.artist.currency || "CAD"}` : "";
+  }
+
+  function iconLink(cls, href, icon, label) {
+    const a = el("a", { class: cls, href, target: "_blank", rel: "noopener" });
+    a.innerHTML = icon;
+    a.append(" " + label);
+    return a;
+  }
+
+  function applyInstagram() {
+    const h = igHandle();
+    document.querySelectorAll("[data-ig]").forEach((a) => { if (h) a.href = igUrl(); else a.hidden = true; });
+    document.querySelectorAll("[data-ig-handle]").forEach((n) => (n.textContent = `@${h}`));
+    if (!state.artist.paypal) {
+      const [, two, three] = document.querySelectorAll(".steps li");
+      if (two) two.replaceChildren(el("strong", { text: "Message Sruthi" }), el("span", { text: `Send the painting’s name to @${h} on Instagram to reserve it.` }));
+      if (three) three.replaceChildren(el("strong", { text: "Pay and receive it" }), el("span", { text: "Sruthi replies with payment details and arranges delivery." }));
+    }
+  }
 
   function renderContact() {
-    const { email, instagram } = state.artist;
+    const { email } = state.artist;
     const body = $("#contact-body");
-    const parts = [el("p", { text: "Every painting is an original. Send the name of the piece you like and where you are, and Sruthi will reply with shipping or pickup options." })];
-    if (email) {
-      parts.push(el("div", { class: "address" }, el("code", { text: email }), copyButton(email)));
-      parts.push(el("p", {}, el("a", { class: "btn", href: mailto("Painting enquiry") }, "Email Sruthi")));
-    }
-    if (instagram) {
-      const handle = instagram.replace(/^@/, "");
-      parts.push(el("p", {}, "Or message on Instagram: ", el("a", { href: `https://instagram.com/${handle}`, rel: "noopener", target: "_blank" }, `@${handle}`)));
-    }
-    if (!email && !instagram) parts.push(el("p", { text: "Contact details are on their way. Check back soon." }));
+    const parts = [el("p", { text: "For questions about a piece, custom commissions or delivery, message Sruthi directly." })];
+    const links = el("div", { class: "contact-links" });
+    if (igHandle()) links.append(iconLink("btn", igUrl(), IG_ICON, `Message @${igHandle()}`));
+    if (email) links.append(el("a", { class: "btn ghost", href: mailto("Painting enquiry") }, "Email Sruthi"));
+    if (links.childElementCount) parts.push(links);
+    if (email) parts.push(el("div", { class: "address" }, el("code", { text: email }), copyButton(email)));
+    if (!email && !igHandle()) parts.push(el("p", { text: "Contact details are on their way. Check back soon." }));
     body.replaceChildren(...parts);
   }
 
@@ -115,9 +141,19 @@
     $("#viewer-price").textContent = isSold(p) ? "Sold — in a private collection" : money(p.price);
     const actions = [];
     if (!isSold(p)) {
-      actions.push(state.artist.email
-        ? el("a", { class: "btn", href: mailto(`Enquiry: ${p.title}`) }, "Enquire about this painting")
-        : el("a", { class: "btn", href: "#contact", onclick: () => viewer.close() }, "Enquire about this painting"));
+      const pay = paypalUrl(p);
+      if (pay) {
+        actions.push(iconLink("btn paypal", pay, PP_ICON, `Buy with PayPal · ${money(p.price)}`));
+        if (igHandle()) actions.push(iconLink("btn ghost", igUrl(), IG_ICON, "Ask a question on Instagram"));
+        actions.push(el("p", { class: "fine", text: igHandle()
+          ? `After paying, message @${igHandle()} with “${p.title}” and your address so Sruthi can arrange delivery.`
+          : `After paying, Sruthi will contact you through PayPal to arrange delivery.` }));
+      } else if (igHandle()) {
+        actions.push(iconLink("btn", igUrl(), IG_ICON, "Buy on Instagram"));
+        actions.push(el("p", { class: "fine", text: `Message @${igHandle()} with “${p.title}” to reserve it.` }));
+      } else if (state.artist.email) {
+        actions.push(el("a", { class: "btn", href: mailto(`Enquiry: ${p.title}`) }, "Enquire about this painting"));
+      }
     }
     $("#viewer-actions").replaceChildren(...actions);
     if (!viewer.open) viewer.showModal();
@@ -150,7 +186,7 @@
       state.artist = data.artist || {};
       const fmt = new Intl.NumberFormat("en-CA", { style: "currency", currency: state.artist.currency || "CAD", maximumFractionDigits: 0 });
       money = (n) => fmt.format(n);
-      renderHero(); renderFilters(); renderWall(); renderContact(); openFromHash();
+      applyInstagram(); renderHero(); renderFilters(); renderWall(); renderContact(); openFromHash();
     })
     .catch(() => {
       $("#wall").replaceChildren(el("li", { class: "note", text: "The paintings couldn’t load. Refresh the page to try again." }));
