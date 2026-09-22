@@ -208,7 +208,8 @@
 
   $("#year").textContent = new Date().getFullYear();
 
-  fetch("data/shop.json")
+  // "no-cache" makes the browser check for a newer copy every visit, so admin edits show up right after each deploy.
+  fetch("data/shop.json", { cache: "no-cache" })
     .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then((data) => {
       state.paintings = data.paintings || [];
