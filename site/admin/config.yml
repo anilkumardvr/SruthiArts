@@ -1,0 +1,93 @@
+# Admin editor for Sruthi Arts (Sveltia CMS, https://github.com/sveltia/sveltia-cms)
+# Every "Save" commits to main, and GitHub Actions redeploys the site in about a minute.
+
+backend:
+  name: github
+  repo: anilkumardvr/SruthiArts
+  branch: main
+  commit_messages:
+    update: "Admin: update {{path}}"
+    uploadMedia: "Admin: upload {{path}}"
+    deleteMedia: "Admin: delete {{path}}"
+
+site_url: https://anilkumardvr.github.io/SruthiArts/
+display_url: https://anilkumardvr.github.io/SruthiArts/
+
+# Uploaded photos go into site/images/paintings and are referenced from the page as images/paintings/<file>
+media_folder: site/images/paintings
+public_folder: images/paintings
+
+# Phone photos are resized and converted to WebP on upload so the gallery stays fast.
+media_libraries:
+  default:
+    config:
+      max_file_size: 15000000
+      transformations:
+        raster_image:
+          format: webp
+          quality: 85
+          width: 1600
+          height: 2000
+
+collections:
+  - name: gallery
+    label: Gallery
+    icon: palette
+    files:
+      - name: paintings
+        label: Paintings and shop settings
+        file: site/data/paintings.json
+        format: json
+        fields:
+          - name: paintings
+            label: Paintings
+            label_singular: painting
+            widget: list
+            add_to_top: true
+            summary: "{{title}} · {{status}} · ${{price}}"
+            fields:
+              - { name: title, label: Title, widget: string }
+              - name: id
+                label: Link name
+                widget: string
+                hint: "Short name used in the painting's web link, e.g. rose-lantern. Lowercase letters, numbers and dashes only. Don't change it after sharing a link."
+                pattern: ['^[a-z0-9-]+$', "Use lowercase letters, numbers and dashes only"]
+              - name: image
+                label: Photo
+                widget: image
+                hint: "A straight-on photo in good daylight. Portrait (taller than wide) looks best."
+              - name: alt
+                label: Photo description
+                widget: string
+                hint: "One sentence describing what the painting shows, read aloud to visitors who can't see it."
+              - { name: description, label: About this painting, widget: text }
+              - name: medium
+                label: Medium
+                widget: select
+                options: ["Acrylic on canvas", "Oil on canvas", "Watercolor", "Gouache", "Mixed media", "Ink on paper", "Pencil on paper"]
+              - { name: width, label: Width (cm), widget: number, value_type: int, min: 1 }
+              - { name: height, label: Height (cm), widget: number, value_type: int, min: 1 }
+              - { name: price, label: Price, widget: number, value_type: int, min: 0, hint: "Whole number in the shop currency, e.g. 249" }
+              - name: status
+                label: Status
+                widget: select
+                default: available
+                options:
+                  - { label: Available, value: available }
+                  - { label: Sold, value: sold }
+              - name: paypalLink
+                label: Custom PayPal link (optional)
+                widget: string
+                required: false
+                hint: "Leave empty to use the shop's PayPal.me link with this painting's price."
+
+          - name: artist
+            label: Shop settings
+            widget: object
+            collapsed: true
+            fields:
+              - { name: name, label: Artist name, widget: string }
+              - { name: instagram, label: Instagram username, widget: string, required: false, hint: "Without the @, e.g. sruthi_artss" }
+              - { name: paypal, label: PayPal.me username, widget: string, required: false, hint: "The part after paypal.me/ — turns on the Buy with PayPal button" }
+              - { name: email, label: Email (optional), widget: string, required: false }
+              - { name: currency, label: Currency, widget: select, default: CAD, options: ["CAD", "USD", "INR", "GBP", "EUR"] }
