@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sruthi Arts</title>
+<meta name="description" content="Original fairy-tale inspired paintings by Sruthi — acrylic, oil, watercolour and mixed media. Browse available works and enquire to buy.">
+<meta name="theme-color" content="#0e0c16">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sruthi Arts">
+<meta property="og:description" content="Original fairy-tale inspired paintings by Sruthi.">
+<meta property="og:image" content="images/paintings/moonlit-garden.svg">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Karla:wght@400;500;700&family=DM+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<a class="skip" href="#gallery">Skip to paintings</a>
+
+<header class="site-header">
+  <a class="brand" href="#top" aria-label="Sruthi Arts, back to top">Sruthi <em>Arts</em></a>
+  <nav aria-label="Main">
+    <a href="#gallery">Paintings</a>
+    <a href="#about">About</a>
+    <a href="#contact">Contact</a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <p class="eyebrow">Original paintings · One of each</p>
+      <h1 id="hero-title">Small doors into <em>quieter worlds</em></h1>
+      <p class="lede">Fairy-tale inspired pieces painted by Sruthi in the hours after work. Every canvas here is an original, and each one goes to a single home.</p>
+      <a class="btn" href="#gallery">See the paintings</a>
+    </div>
+    <figure class="hero-art" id="hero-art" aria-hidden="true"></figure>
+  </section>
+
+  <section class="gallery" id="gallery" aria-labelledby="gallery-title">
+    <div class="section-head">
+      <h2 id="gallery-title">Paintings</h2>
+      <div class="filters" role="group" aria-label="Filter by medium" id="filters"></div>
+    </div>
+    <ul class="wall" id="wall" aria-live="polite"></ul>
+    <noscript><p class="note">Turn on JavaScript to browse the paintings.</p></noscript>
+  </section>
+
+  <section class="about" id="about" aria-labelledby="about-title">
+    <h2 id="about-title">About the artist</h2>
+    <div class="about-body">
+      <p>Hi, I’m <strong>Sruthi</strong>. I paint aesthetic, fairy-tale inspired pieces in my free time. My full-time work is software engineering, but painting is my calm space.</p>
+      <p>I share and sell selected works here. If one of them speaks to you, I’d love for it to find a home with you.</p>
+    </div>
+  </section>
+
+  <section class="contact" id="contact" aria-labelledby="contact-title">
+    <h2 id="contact-title">Buy a painting or ask a question</h2>
+    <div id="contact-body" class="contact-body"></div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <p>© <span id="year"></span> Sruthi Arts. All paintings are original works; images may not be reproduced without permission.</p>
+</footer>
+
+<dialog class="viewer" id="viewer" aria-labelledby="viewer-title">
+  <div class="viewer-inner">
+    <button class="close" type="button" id="viewer-close" aria-label="Close">×</button>
+    <div class="viewer-art"><img id="viewer-img" alt=""></div>
+    <div class="viewer-label">
+      <p class="label-artist" id="viewer-artist"></p>
+      <h2 id="viewer-title"></h2>
+      <p class="label-spec" id="viewer-spec"></p>
+      <p class="label-desc" id="viewer-desc"></p>
+      <p class="label-price" id="viewer-price"></p>
+      <div class="viewer-actions" id="viewer-actions"></div>
+      <div class="viewer-nav">
+        <button type="button" id="viewer-prev">← Previous</button>
+        <button type="button" id="viewer-next">Next →</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script src="assets/app.js" defer></script>
+<script src="assets/fairy.js" defer></script>
+</body>
+</html>
