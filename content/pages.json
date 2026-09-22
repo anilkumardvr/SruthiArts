@@ -1,0 +1,38 @@
+{
+  "hero": {
+    "eyebrow": "Ludo boards · Clocks · Originals · Prints",
+    "title": "Small doors into",
+    "titleAccent": "quieter worlds",
+    "intro": "Fairy-tale inspired pieces painted by Sruthi in the hours after work, from one-of-a-kind originals to ludo boards, clocks and prints."
+  },
+  "about": {
+    "heading": "About the artist",
+    "text": "Hi, I’m Sruthi. I paint aesthetic, fairy-tale inspired pieces in my free time. My full-time work is software engineering, but painting is my calm space.\n\nI share and sell selected works here. If one of them speaks to you, I’d love for it to find a home with you.",
+    "photo": "",
+    "photoAlt": ""
+  },
+  "buy": {
+    "heading": "How to buy",
+    "steps": [
+      {
+        "title": "Choose a piece",
+        "text": "Open anything marked Available to see its size, medium and price."
+      },
+      {
+        "title": "Message Sruthi",
+        "text": "Send the piece’s name to @sruthi_artss on Instagram to reserve it."
+      },
+      {
+        "title": "Pay and receive it",
+        "text": "Sruthi replies with payment details and arranges delivery."
+      }
+    ]
+  },
+  "contact": {
+    "heading": "Questions or commissions",
+    "text": "For questions about a piece, custom commissions or delivery, message Sruthi directly."
+  },
+  "footer": {
+    "text": "All artwork is Sruthi’s own; images may not be reproduced without permission."
+  }
+}
