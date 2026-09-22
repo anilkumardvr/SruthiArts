@@ -29,8 +29,12 @@ if (data) {
     ids.add(p.id);
     if (p.status && !["available", "sold"].includes(p.status)) errors.push(`${where}: status must be "available" or "sold"`);
     if (p.image && !existsSync(join(SITE, p.image))) errors.push(`${where}: image not found at site/${p.image}`);
+    if (p.paypalLink && !/^https:\/\//.test(p.paypalLink)) errors.push(`${where}: paypalLink must start with https://`);
   });
   const a = data.artist || {};
+  if (a.instagram && !/^@?[A-Za-z0-9._]{1,30}$/.test(a.instagram)) errors.push(`artist.instagram "${a.instagram}" should be just the username, e.g. sruthi_artss`);
+  if (a.paypal && /\s/.test(a.paypal)) errors.push(`artist.paypal "${a.paypal}" should be just the PayPal.me username`);
+  if (!a.paypal) warnings.push("artist.paypal is empty — the Buy with PayPal button is hidden until a PayPal.me username is added");
   if (!a.email && !a.instagram) warnings.push("artist.email and artist.instagram are both empty — visitors have no way to enquire");
   if (a.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email)) errors.push(`artist.email "${a.email}" is not a valid address`);
 
