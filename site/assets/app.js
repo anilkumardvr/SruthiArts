@@ -16,7 +16,15 @@
     return node;
   };
 
-  const state = { paintings: [], artist: {}, filter: "All", current: -1 };
+  // Shop categories, in menu order. The "id" is what paintings.json stores in each item's "category".
+  const CATEGORIES = [
+    { id: "all", label: "All" },
+    { id: "ludo-boards", label: "Ludo boards" },
+    { id: "clocks", label: "Clocks" },
+    { id: "originals", label: "Originals" },
+    { id: "prints", label: "Prints" },
+  ];
+  const state = { paintings: [], artist: {}, filter: "all", current: -1 };
   let money = (n) => `$${n}`;
 
   const spec = (p) => `${p.medium} · ${p.width} × ${p.height} cm`;
@@ -30,25 +38,29 @@
   }
 
   function renderFilters() {
-    const media = ["All", ...new Set(state.paintings.map((p) => p.medium))];
-    const wrap = $("#filters");
-    wrap.replaceChildren(
-      ...media.map((m) =>
+    const count = (id) => (id === "all" ? state.paintings.length : state.paintings.filter((p) => p.category === id).length);
+    $("#filters").replaceChildren(
+      ...CATEGORIES.map((c) =>
         el("button", {
           type: "button",
-          "aria-pressed": String(m === state.filter),
-          text: m,
-          onclick: () => { state.filter = m; renderFilters(); renderWall(); },
-        })
+          "aria-pressed": String(c.id === state.filter),
+          onclick: () => { state.filter = c.id; renderFilters(); renderWall(); },
+        }, c.label, el("span", { class: "count", text: String(count(c.id)) }))
       )
     );
-    wrap.hidden = media.length <= 2;
   }
 
   function renderWall() {
     const list = state.paintings
       .map((p, idx) => ({ p, idx }))
-      .filter(({ p }) => state.filter === "All" || p.medium === state.filter);
+      .filter(({ p }) => state.filter === "all" || p.category === state.filter);
+    if (!list.length) {
+      const label = CATEGORIES.find((c) => c.id === state.filter)?.label.toLowerCase() || "pieces";
+      const empty = el("li", { class: "empty" }, el("p", { text: `No ${label} listed right now.` }));
+      if (igHandle()) empty.append(el("p", {}, el("a", { href: igUrl(), target: "_blank", rel: "noopener" }, `Follow @${igHandle()}`), " for new pieces, or message to ask about one."));
+      $("#wall").replaceChildren(empty);
+      return;
+    }
     $("#wall").replaceChildren(
       ...list.map(({ p, idx }, i) =>
         el("li", { class: `piece${isSold(p) ? " is-sold" : ""}`, style: `--i:${i}` },
