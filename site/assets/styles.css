@@ -112,6 +112,10 @@ section { padding-block: clamp(48px, 8vw, 96px); }
 }
 .filters button[aria-pressed="true"] { color: #fff; background: var(--berry); border-color: var(--berry); }
 .filters button:hover:not([aria-pressed="true"]) { color: var(--berry); border-color: var(--rose); }
+.filters .count { margin-left: 6px; font-family: var(--mono); font-size: .75rem; opacity: .7; }
+.wall .empty { grid-column: 1 / -1; background: var(--paper); border: 1px dashed var(--rose); padding: 28px; color: var(--mauve); display: grid; gap: 6px; }
+.wall .empty p { margin: 0; }
+.wall .empty p:first-child { font-family: var(--display); font-size: var(--step-1); color: var(--plum); }
 
 .wall { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: clamp(28px, 4vw, 48px) clamp(20px, 3vw, 36px); }
 .piece { display: grid; gap: 16px; align-content: start; }
