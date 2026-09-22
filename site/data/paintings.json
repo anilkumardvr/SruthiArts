@@ -1,0 +1,58 @@
+{
+  "artist": {
+    "name": "Sruthi",
+    "email": "",
+    "instagram": "",
+    "currency": "CAD"
+  },
+  "paintings": [
+    {
+      "id": "moonlit-garden",
+      "title": "Moonlit Garden",
+      "description": "Soft pastel garden under a silver moon.",
+      "medium": "Acrylic on canvas",
+      "width": 40,
+      "height": 50,
+      "price": 249,
+      "status": "available",
+      "image": "images/paintings/moonlit-garden.svg",
+      "alt": "A dark blue night garden with pale pink and lilac blooms beneath a large silver moon"
+    },
+    {
+      "id": "lavender-skies",
+      "title": "Lavender Skies",
+      "description": "Calm gradients and dreamy clouds.",
+      "medium": "Oil on canvas",
+      "width": 45,
+      "height": 60,
+      "price": 199,
+      "status": "available",
+      "image": "images/paintings/lavender-skies.svg",
+      "alt": "Layered lavender and peach sky with soft drifting clouds"
+    },
+    {
+      "id": "golden-forest",
+      "title": "Golden Forest",
+      "description": "Sun-drenched trees, warm tones.",
+      "medium": "Mixed media",
+      "width": 50,
+      "height": 70,
+      "price": 279,
+      "status": "available",
+      "image": "images/paintings/golden-forest.svg",
+      "alt": "Tall dark tree trunks against glowing amber and gold light"
+    },
+    {
+      "id": "sea-whispers",
+      "title": "Sea Whispers",
+      "description": "Aesthetic coastal blues.",
+      "medium": "Watercolor",
+      "width": 42,
+      "height": 56,
+      "price": 239,
+      "status": "available",
+      "image": "images/paintings/sea-whispers.svg",
+      "alt": "Gentle layered waves in teal and pale blue meeting a misty horizon"
+    }
+  ]
+}
