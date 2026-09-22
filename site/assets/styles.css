@@ -141,6 +141,8 @@ section { padding-block: clamp(48px, 8vw, 96px); }
 .about { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: clamp(20px, 5vw, 64px); border-top: 1px solid var(--line); }
 .about-body p { max-width: 62ch; margin: 0 0 1em; font-size: var(--step-1); line-height: 1.6; }
 .about-body strong { color: var(--berry); font-weight: 500; }
+.about-head { display: grid; gap: 20px; align-content: start; }
+.about-photo { width: min(100%, 280px); aspect-ratio: 4 / 5; object-fit: cover; background: var(--paper); padding: 10px; box-shadow: 0 0 0 1px var(--rosegold), var(--shadow); }
 
 /* How to buy */
 .buy { border-top: 1px solid var(--line); display: grid; gap: 28px; }
