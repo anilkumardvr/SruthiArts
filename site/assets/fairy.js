@@ -9,7 +9,7 @@
   canvas.setAttribute("aria-hidden", "true");
   document.body.appendChild(canvas);
   const ctx = canvas.getContext("2d");
-  const colors = ["#c9b4ff", "#e3c78f", "#f3eaff"];
+  const colors = ["#e0789c", "#c8927a", "#f7b6cb"];
   const dots = [];
   let dpr = 1, running = false, last = 0;
 
