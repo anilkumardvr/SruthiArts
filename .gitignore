@@ -1,0 +1,9 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+# Node (validation script only)
+node_modules/
+# Local preview output
+_site/
