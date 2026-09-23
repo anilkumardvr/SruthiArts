@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sruthi Arts</title>
-<meta name="description" content="Fairy-tale inspired art by Sruthi: ludo boards, clocks, original paintings and prints. Browse the shop and buy with PayPal or Instagram.">
+<meta name="description" content="Fairy-tale inspired art by Sruthi: ludo boards, clocks, original paintings and prints. Browse the shop and buy securely with PayPal.">
 <meta name="theme-color" content="#fff4f6">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Sruthi Arts">
@@ -21,7 +21,7 @@
 
 <header class="site-header">
   <a class="brand" href="#top" aria-label="Sruthi Arts, back to top">Sruthi <em>Arts</em></a>
-  <nav aria-label="Main">
+  <nav class="top-nav" aria-label="Main">
     <a href="#gallery">Shop</a>
     <a href="#about">About</a>
     <a href="#buy">How to buy</a>
@@ -52,7 +52,7 @@
     <noscript><p class="note">Turn on JavaScript to browse the shop.</p></noscript>
   </section>
 
-  <section class="about" id="about" aria-labelledby="about-title">
+  <section class="about reveal" id="about" aria-labelledby="about-title">
     <div class="about-head">
       <h2 id="about-title" data-content="about.heading">About the artist</h2>
       <img class="about-photo" id="about-photo" alt="" hidden>
@@ -63,7 +63,7 @@
     </div>
   </section>
 
-  <section class="buy" id="buy" aria-labelledby="buy-title">
+  <section class="buy reveal" id="buy" aria-labelledby="buy-title">
     <h2 id="buy-title" data-content="buy.heading">How to buy</h2>
     <ol class="steps" id="steps">
       <li><strong>Choose a piece</strong><span>Open anything marked Available to see its size, medium and price.</span></li>
@@ -72,7 +72,7 @@
     </ol>
   </section>
 
-  <section class="contact" id="contact" aria-labelledby="contact-title">
+  <section class="contact reveal" id="contact" aria-labelledby="contact-title">
     <h2 id="contact-title" data-content="contact.heading">Questions or commissions</h2>
     <div id="contact-body" class="contact-body"></div>
   </section>
@@ -83,16 +83,25 @@
   <p><a data-ig href="https://www.instagram.com/sruthi_artss/" target="_blank" rel="noopener">Instagram</a> · <a href="admin/">Admin</a></p>
 </footer>
 
+<!-- Phone navigation: thumb-reachable tab bar -->
+<nav class="tabbar" aria-label="Quick links">
+  <a href="#gallery"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span>Shop</span></a>
+  <a href="#about"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>About</span></a>
+  <a href="#buy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.3 11.2a1.5 1.5 0 0 1-1.5 1.3H7.8a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg><span>How to buy</span></a>
+  <a data-ig href="https://www.instagram.com/sruthi_artss/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor" stroke="none"/></svg><span>Instagram</span></a>
+</nav>
+
 <dialog class="viewer" id="viewer" aria-labelledby="viewer-title">
-  <div class="viewer-inner">
+  <div class="viewer-inner" id="viewer-inner">
+    <div class="grabber" aria-hidden="true"></div>
     <button class="close" type="button" id="viewer-close" aria-label="Close">×</button>
-    <div class="viewer-art"><img id="viewer-img" alt=""></div>
+    <div class="viewer-art" id="viewer-art"><img id="viewer-img" alt=""></div>
     <div class="viewer-label">
       <p class="label-artist" id="viewer-artist"></p>
       <h2 id="viewer-title"></h2>
       <p class="label-spec" id="viewer-spec"></p>
       <p class="label-desc" id="viewer-desc"></p>
-      <p class="label-price" id="viewer-price"></p>
+      <div class="price-row"><p class="label-price" id="viewer-price"></p><span class="stock" id="viewer-stock"></span></div>
       <div class="viewer-actions" id="viewer-actions"></div>
       <div class="viewer-nav">
         <button type="button" id="viewer-prev">← Previous</button>
