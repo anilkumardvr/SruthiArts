@@ -3,5 +3,6 @@
   "instagram": "sruthi_artss",
   "email": "",
   "paypal": "https://www.paypal.me/SruthirikaKoora",
-  "currency": "CAD"
+  "currency": "CAD",
+  "checkoutApi": "https://www.paypal.me/SruthirikaKoora"
 }
