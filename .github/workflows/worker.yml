@@ -1,0 +1,29 @@
+name: Deploy checkout Worker
+
+# Deploys worker/ to Cloudflare when it changes. Needs repo secrets CLOUDFLARE_API_TOKEN
+# (template "Edit Cloudflare Workers") and CLOUDFLARE_ACCOUNT_ID. Without them this workflow just skips.
+on:
+  push:
+    branches: [main]
+    paths: ["worker/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Skip when Cloudflare secrets are not set
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::notice::Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repo secrets to deploy the Worker automatically."
+      - uses: cloudflare/wrangler-action@v3
+        if: env.HAS_TOKEN == 'true'
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
