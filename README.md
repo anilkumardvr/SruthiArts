@@ -19,6 +19,7 @@ site/
 scripts/build-data.mjs    builds site/data/shop.json from content/
 worker/                   Cloudflare Worker: PayPal checkout, stock updates, orders, WhatsApp alerts
 docs/SETUP.md             one-time setup for checkout, alerts and GitHub login
+docs/DOMAIN.md            connecting www.sruthiarts.com
 scripts/validate.mjs      checks run before every deploy
 .github/workflows/pages.yml
 ```
@@ -27,7 +28,7 @@ Pushing to `main` builds `shop.json`, runs the checks and, if they pass, deploys
 
 ## Studio (admin)
 
-Open **https://anilkumardvr.github.io/SruthiArts/admin/** (also linked as "Admin" in the site footer). It works like posting on Instagram and is built for phones first.
+Open **https://www.sruthiarts.com/admin/** (also linked as "Admin" in the site footer). It works like posting on Instagram and is built for phones first.
 
 | In the studio | What it does |
 | --- | --- |
@@ -79,7 +80,7 @@ cd site && python3 -m http.server 8000                     # then open http://lo
 
 ## One-time GitHub Pages setup
 
-Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**. The site is served at `https://anilkumardvr.github.io/SruthiArts/`.
+Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**. The site is served at `https://www.sruthiarts.com` (the old `anilkumardvr.github.io/SruthiArts` address redirects there) ([docs/DOMAIN.md](docs/DOMAIN.md)).
 
 ## History
 
