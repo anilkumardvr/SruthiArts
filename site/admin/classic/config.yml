@@ -16,8 +16,8 @@ backend:
     uploadMedia: "Admin: upload {{path}}"
     deleteMedia: "Admin: delete {{path}}"
 
-site_url: https://anilkumardvr.github.io/SruthiArts/
-display_url: https://anilkumardvr.github.io/SruthiArts/
+site_url: https://www.sruthiarts.com/
+display_url: https://www.sruthiarts.com/
 
 # Uploaded photos go into site/images/paintings and are referenced from the page as images/paintings/<file>
 media_folder: site/images/paintings
