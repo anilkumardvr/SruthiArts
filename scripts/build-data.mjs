@@ -27,10 +27,30 @@ const items = readdirSync(join(ROOT, "content/items"))
   })
   .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || a.title.localeCompare(b.title));
 
+function paypalUser(v) {
+  return String(v || "").trim().replace(/^https?:\/\/(www\.)?paypal\.me\//i, "").replace(/^paypal\.me\//i, "").replace(/^@/, "").replace(/[/?#].*$/, "");
+}
+function validCheckoutApi(v) {
+  try { const u = new URL(v); return u.protocol === "https:" && !/(^|\.)paypal\.(me|com)$/i.test(u.hostname); } catch { return false; }
+}
+function validClientId(v) { return /^[A-Za-z0-9_-]{40,}$/.test(String(v)); }
+
 const pages = read("content/pages.json");
 if (pages.about) pages.about.photo = relPath(pages.about.photo);
 
-const shop = { artist: read("content/settings.json"), pages, paintings: items };
+// Settings: tidy values typed in the studio so a slip can't break the Buy button.
+const artist = read("content/settings.json");
+artist.paypal = paypalUser(artist.paypal);
+if (artist.checkoutApi && !validCheckoutApi(artist.checkoutApi)) {
+  console.warn(`warning: checkoutApi "${artist.checkoutApi}" is not a checkout server address (it should be the Worker URL) — checkout stays off`);
+  delete artist.checkoutApi;
+}
+if (artist.paypalClientId && !validClientId(artist.paypalClientId)) {
+  console.warn(`warning: paypalClientId "${artist.paypalClientId}" doesn't look like a PayPal client ID — checkout stays off`);
+  delete artist.paypalClientId;
+}
+
+const shop = { artist, pages, paintings: items };
 mkdirSync(join(ROOT, "site/data"), { recursive: true });
 writeFileSync(join(ROOT, "site/data/shop.json"), JSON.stringify(shop, null, 2) + "\n");
 console.log(`Built site/data/shop.json with ${items.length} item(s).`);
