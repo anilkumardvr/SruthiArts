@@ -34,8 +34,16 @@ a { color: var(--berry); }
 /* ---------- Login ---------- */
 .login { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; background: radial-gradient(600px 400px at 80% 0%, var(--petal), transparent 70%), var(--bg); }
 .login-card { width: min(100%, 360px); display: grid; gap: 16px; text-align: center; animation: rise .6s var(--spring) both; }
-.logo { font-family: var(--display); font-style: italic; font-size: 2.6rem; line-height: 1; margin: 0; }
-.logo b { font-style: normal; font-weight: 400; color: var(--berry); }
+.logo { display: inline-block; margin: 0; line-height: 0; color: var(--ink); }
+.logo svg { height: 96px; width: auto; overflow: visible; }
+.topbar .logo svg { height: 42px; }
+.lg-flourish { stroke-dasharray: 240; stroke-dashoffset: 240; animation: lgDraw 1.6s .2s var(--ease) forwards; }
+.lg-moon, .lg-spark { transform-box: fill-box; transform-origin: center; }
+.lg-moon { animation: pop .7s .9s var(--spring) both; }
+.lg-spark { animation: twinkle 2.8s 1.2s ease-in-out infinite; }
+.lg-spark.s2 { animation-delay: 2.1s; }
+@keyframes lgDraw { to { stroke-dashoffset: 0; } }
+@keyframes twinkle { 50% { transform: scale(.5) rotate(45deg); opacity: .5; } }
 .login p { color: var(--muted); margin: 0; }
 .login .or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; }
 .login .or::before, .login .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
@@ -68,7 +76,6 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--r
 
 /* ---------- Top bar ---------- */
 .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 56px; padding: 0 12px; padding-top: env(safe-area-inset-top, 0px); background: rgba(255, 255, 255, .92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
-.topbar .logo { font-size: 1.7rem; }
 .icon-btn { width: 44px; height: 44px; display: inline-grid; place-items: center; border: 0; background: none; border-radius: 12px; color: var(--ink); position: relative; transition: transform .15s var(--ease), background .2s; text-decoration: none; }
 .icon-btn:active { transform: scale(.88); }
 .icon-btn:hover { background: #f7f1f4; }

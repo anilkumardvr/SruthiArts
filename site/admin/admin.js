@@ -46,6 +46,8 @@
     heart: '<svg class="heart" viewBox="0 0 24 24"><defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f2c46b"/><stop offset=".5" stop-color="#e0789c"/><stop offset="1" stop-color="#a8325e"/></linearGradient></defs><path d="M12 21s-7.5-4.6-9.6-9.2C.8 8.2 3 4 6.9 4c2.2 0 3.7 1.2 5.1 3 1.4-1.8 2.9-3 5.1-3 3.9 0 6.1 4.2 4.5 7.8C19.5 16.4 12 21 12 21z"/></svg>',
     cart: '<svg viewBox="0 0 24 24"><path d="M5 8h14l-1.3 11.2a1.5 1.5 0 0 1-1.5 1.3H7.8a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg>',
   };
+  const LOGO = "<svg class=\"logo-mark\" viewBox=\"0 0 200 64\" aria-hidden=\"true\" focusable=\"false\"><defs><linearGradient id=\"lgfA\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#e0789c\" stop-opacity=\"0\"/><stop offset=\".22\" stop-color=\"#e0789c\"/><stop offset=\".8\" stop-color=\"#c8927a\"/><stop offset=\"1\" stop-color=\"#c8927a\" stop-opacity=\"0\"/></linearGradient></defs><path class=\"lg-flourish\" d=\"M6 53c34-10 64 8 104-2 24-6 40-15 66-10\" fill=\"none\" stroke=\"url(#lgfA)\" stroke-width=\"1.8\" stroke-linecap=\"round\"/><text class=\"lg-word\" x=\"86\" y=\"42\" text-anchor=\"middle\" font-family=\"'Mrs Saint Delafield', 'Brush Script MT', cursive\" font-size=\"48\" fill=\"currentColor\">Sruthi</text><path class=\"lg-moon\" d=\"M171 7a8.5 8.5 0 1 0 7.4 12.3 6.6 6.6 0 1 1-7.4-12.3z\" fill=\"#f2c46b\"/><path class=\"lg-spark\" d=\"M20 10l2.4 5.6 5.6 2.4-5.6 2.4L20 26l-2.4-5.6-5.6-2.4 5.6-2.4z\" fill=\"#e0789c\"/><path class=\"lg-spark s2\" d=\"M188 30l1.5 3.5 3.5 1.5-3.5 1.5-1.5 3.5-1.5-3.5-3.5-1.5 3.5-1.5z\" fill=\"#c8927a\"/><text class=\"lg-arts\" x=\"178\" y=\"56\" text-anchor=\"middle\" font-family=\"Karla, system-ui, sans-serif\" font-weight=\"700\" font-size=\"9\" letter-spacing=\"3.6\" fill=\"#a8325e\">ARTS</text></svg>";
+  const logo = (tag = "span") => el(tag, { class: "logo", "aria-label": "Sruthi Arts", html: LOGO });
   const icon = (name, cls) => el("span", { class: cls || "", html: ICON[name], "aria-hidden": "true", style: "display:contents" });
 
   function toast(msg, kind = "") {
@@ -162,7 +164,7 @@
       el("button", { class: "btn block", type: "submit" }, "Log in"),
       el("p", { class: "help" }, "Create one at GitHub → Settings → Developer settings → Fine-grained tokens, with access to ", el("b", { text: "SruthiArts" }), " and ", el("b", { text: "Contents: Read and write" }), "."));
     app.replaceChildren(el("main", { class: "login" }, el("div", { class: "login-card" },
-      el("h1", { class: "logo" }, "Sruthi ", el("b", { text: "Arts" })),
+      logo("h1"),
       el("p", { text: "Your studio. Post new pieces, update stock and see orders." }),
       oauth ? el("button", { class: "btn gh block", type: "button", onclick: () => oauthLogin(api, err) }, icon("gh"), "Continue with GitHub") : null,
       oauth ? el("div", { class: "or", text: "or" }) : null,
@@ -209,7 +211,7 @@
     loadOrders().then(() => { renderNavBadges(); if (S.tab === "orders") renderView(); });
   }
   function skeleton() {
-    return el("div", {}, el("div", { class: "topbar" }, el("span", { class: "logo" }, "Sruthi ", el("b", { text: "Arts" }))),
+    return el("div", {}, el("div", { class: "topbar" }, logo()),
       el("div", { class: "shell" }, el("div", { class: "profile" }, el("div", { class: "avatar" }, el("div", { class: "skeleton" })), el("div", {}, el("div", { class: "skeleton", style: "height:18px;width:60%;border-radius:6px" }))),
         el("div", { class: "grid", style: "margin-top:16px" }, Array.from({ length: 9 }, () => el("div", { class: "tile skeleton" })))));
   }
@@ -236,7 +238,7 @@
     const tabIndex = TABS.findIndex((t) => t.id === S.tab);
     app.replaceChildren(
       el("header", { class: "topbar" },
-        el("span", { class: "logo" }, "Sruthi ", el("b", { text: "Arts" })),
+        logo(),
         el("span", { id: "publish-slot" }),
         el("span", {},
           el("a", { class: "icon-btn", href: "../", target: "_blank", rel: "noopener", title: "View shop", "aria-label": "View shop" }, icon("eye")),
