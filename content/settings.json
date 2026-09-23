@@ -4,5 +4,6 @@
   "email": "",
   "paypal": "https://www.paypal.me/SruthirikaKoora",
   "currency": "CAD",
-  "checkoutApi": "https://www.paypal.me/SruthirikaKoora"
+  "checkoutApi": "https://www.paypal.me/SruthirikaKoora",
+  "paypalClientId": "SruthirikaKoora"
 }
