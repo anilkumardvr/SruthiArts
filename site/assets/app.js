@@ -156,8 +156,19 @@
     if (about.text) $("#about-body").replaceChildren(...about.text.split(/\n\s*\n/).map((para) => el("p", { text: para.trim() })));
     const photo = $("#about-photo");
     if (about.photo) { photo.src = about.photo; photo.alt = about.photoAlt || `Photo of ${state.artist.name || "the artist"}`; photo.hidden = false; }
+    splitHeadline();
     const steps = (pages.buy && pages.buy.steps) || [];
     if (steps.length) $("#steps").replaceChildren(...steps.map((st) => el("li", {}, el("strong", { text: st.title || "" }), el("span", { text: st.text || "" }))));
+  }
+
+  // Headline words rise in one by one.
+  function splitHeadline() {
+    if (reduceMotion) return;
+    let d = 0;
+    document.querySelectorAll("#hero-title [data-content]").forEach((part) => {
+      const words = part.textContent.trim().split(/\s+/);
+      part.replaceChildren(...words.flatMap((w, i) => [el("span", { class: "w", style: `--d:${d++}`, text: w }), i < words.length - 1 ? " " : ""]));
+    });
   }
 
   function renderContact() {
@@ -406,6 +417,26 @@
       f.style.transform = `perspective(900px) rotateY(${x * 6}deg) rotateX(${-y * 6}deg)`;
     });
     hero.addEventListener("pointerleave", () => { const f = hero.querySelector(".tilt"); if (f) f.style.transform = ""; });
+  })();
+
+  // Depth on scroll: the hero painting drifts slower than the page; framed pieces lean toward the cursor.
+  (function depth() {
+    if (reduceMotion) return;
+    const art = $("#hero-art");
+    let ticking = false;
+    addEventListener("scroll", () => {
+      if (ticking) return; ticking = true;
+      requestAnimationFrame(() => { const y = Math.min(scrollY, 900); art.style.translate = `0 ${y * 0.12}px`; ticking = false; });
+    }, { passive: true });
+    if (!matchMedia("(pointer: fine)").matches) return;
+    const wall = $("#wall");
+    wall.addEventListener("pointermove", (e) => {
+      const f = e.target.closest(".piece .frame"); if (!f) return;
+      const r = f.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      f.style.transform = `perspective(700px) translateY(-4px) rotateY(${x * 7}deg) rotateX(${-y * 7}deg)`;
+    });
+    wall.addEventListener("pointerout", (e) => { const f = e.target.closest && e.target.closest(".piece .frame"); if (f && !f.contains(e.relatedTarget)) f.style.transform = ""; });
   })();
 
   // Highlight the tab bar item for the section in view (phones).
