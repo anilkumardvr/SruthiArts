@@ -582,9 +582,9 @@
         inp("email", "Email (optional)", { type: "email" }),
         el("label", { class: "field" }, el("span", { text: "Currency" }), el("select", { onchange: (e) => { d.currency = e.target.value; dirty(); } }, CURRENCIES.map((c) => el("option", { value: c, selected: (d.currency || "CAD") === c ? true : null, text: c }))))),
       el("section", { class: "card", style: "--i:1" }, el("h2", { text: "Checkout" }),
-        inp("checkoutApi", "Checkout server URL", { type: "url", placeholder: "https://sruthiarts-checkout.<you>.workers.dev" }),
+        inp("checkoutApi", "Checkout server URL", { type: "url", placeholder: "https://sruthiarts-checkout.<you>.workers.dev" }, "Leave empty until the checkout server is set up (docs/SETUP.md)."),
         inp("paypalClientId", "PayPal client ID", {}, "Public ID from developer.paypal.com. With the server URL, this turns on the PayPal buttons and automatic stock updates."),
-        inp("paypal", "PayPal.me username (backup)", {}, "Only used while checkout isn't set up."),
+        inp("paypal", "PayPal.me username", { placeholder: "SruthirikaKoora" }, "Just the name after paypal.me/, without @. Used for the Buy button until checkout is set up."),
         el("button", { class: "btn light", onclick: test }, "Test connection"), status),
       el("section", { class: "card", style: "--i:2" }, el("h2", { text: "Account" }),
         el("p", { style: "margin:0", text: S.user ? `Signed in as @${S.user.login}` : "" }),
@@ -598,6 +598,14 @@
       const { sha } = await getJson("content/settings.json");
       const clean = Object.fromEntries(Object.entries(S.setDraft).map(([k, v]) => [k, typeof v === "string" ? v.trim() : v]));
       clean.instagram = (clean.instagram || "").replace(/^@/, "");
+      clean.paypal = (clean.paypal || "").replace(/^https?:\/\/(www\.)?paypal\.me\//i, "").replace(/^paypal\.me\//i, "").replace(/^@/, "").replace(/[/?#].*$/, "");
+      if (clean.checkoutApi) {
+        let ok = false;
+        try { const u = new URL(clean.checkoutApi); ok = u.protocol === "https:" && !/(^|\.)paypal\.(me|com)$/i.test(u.hostname); } catch {}
+        if (!ok) return toast("Checkout server URL should be your Cloudflare Worker address (https://…workers.dev), not a PayPal link. Leave it empty until checkout is set up.", "err");
+      }
+      if (clean.paypalClientId && !/^[A-Za-z0-9_-]{40,}$/.test(clean.paypalClientId)) return toast("PayPal client ID is the long code from developer.paypal.com → Apps & Credentials, not a username. Leave it empty until checkout is set up.", "err");
+      if (clean.checkoutApi && !clean.paypalClientId) return toast("Add the PayPal client ID too, or clear the checkout server URL.", "err");
       const r = await putJson("content/settings.json", clean, "Admin: update settings", sha);
       S.settings = clean; S.settingsSha = r.content.sha; S.dirty = false;
       toast("Settings saved"); render(true);
