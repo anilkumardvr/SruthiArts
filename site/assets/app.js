@@ -157,8 +157,6 @@
     const photo = $("#about-photo");
     if (about.photo) { photo.src = about.photo; photo.alt = about.photoAlt || `Photo of ${state.artist.name || "the artist"}`; photo.hidden = false; }
     splitHeadline();
-    const steps = (pages.buy && pages.buy.steps) || [];
-    if (steps.length) $("#steps").replaceChildren(...steps.map((st) => el("li", {}, el("strong", { text: st.title || "" }), el("span", { text: st.text || "" }))));
   }
 
   // Headline words rise in one by one.
@@ -446,7 +444,7 @@
     const io = new IntersectionObserver((entries) => {
       entries.forEach((en) => { if (en.isIntersecting) links.forEach((a) => a.classList.toggle("active", a.getAttribute("href") === `#${en.target.id}`)); });
     }, { rootMargin: "-45% 0px -50% 0px" });
-    ["gallery", "about", "buy"].forEach((id) => { const s = document.getElementById(id); if (s) io.observe(s); });
+    ["gallery", "about", "contact"].forEach((id) => { const s = document.getElementById(id); if (s) io.observe(s); });
   })();
 
   $("#year").textContent = new Date().getFullYear();
