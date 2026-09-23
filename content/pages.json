@@ -11,23 +11,6 @@
     "photo": "images/paintings/about-muddf1c7.jpg",
     "photoAlt": ""
   },
-  "buy": {
-    "heading": "How to buy",
-    "steps": [
-      {
-        "title": "Choose a piece",
-        "text": "Open anything marked Available to see its size, medium and price."
-      },
-      {
-        "title": "Message Sruthi",
-        "text": "Send the piece’s name to @sruthi_artss on Instagram to reserve it."
-      },
-      {
-        "title": "Pay and receive it",
-        "text": "Sruthi replies with payment details and arranges delivery."
-      }
-    ]
-  },
   "contact": {
     "heading": "Questions or commissions",
     "text": "For questions about a piece, custom commissions or delivery, message Sruthi directly."
