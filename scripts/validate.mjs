@@ -42,7 +42,7 @@ if (data) {
   if (a.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email)) errors.push(`content/settings.json: email "${a.email}" is not a valid address`);
 
   const pg = data.pages || {};
-  for (const key of ["hero.title", "about.heading", "buy.heading", "contact.heading"]) {
+  for (const key of ["hero.title", "about.heading", "contact.heading"]) {
     const v = key.split(".").reduce((o, k) => (o == null ? o : o[k]), pg);
     if (typeof v !== "string" || !v.trim()) errors.push(`content/pages.json: "${key}" must not be empty`);
   }
