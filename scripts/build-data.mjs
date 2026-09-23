@@ -18,6 +18,11 @@ const items = readdirSync(join(ROOT, "content/items"))
   .map((f) => {
     const item = { id: f.replace(/\.json$/, ""), ...read(`content/items/${f}`) };
     item.image = relPath(item.image);
+    // Stock: "quantity" is how many are left (default 1 for one-of-a-kind pieces). 0, or status "sold", means sold out.
+    const qty = Number.isFinite(Number(item.quantity)) ? Math.max(0, Math.floor(Number(item.quantity))) : 1;
+    item.quantity = item.status === "sold" ? 0 : qty;
+    item.status = item.quantity > 0 ? "available" : "sold";
+    if (!item.paypalLink) delete item.paypalLink;
     return item;
   })
   .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || a.title.localeCompare(b.title));

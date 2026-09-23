@@ -27,6 +27,7 @@ if (data) {
     if (!CATEGORIES.includes(p.category)) errors.push(`${where}: category must be one of ${CATEGORIES.join(", ")}`);
     if (p.status && !["available", "sold"].includes(p.status)) errors.push(`${where}: status must be "available" or "sold"`);
     if (p.image && !existsSync(join(SITE, p.image))) errors.push(`${where}: image not found at site/${p.image}`);
+    if (!Number.isInteger(p.quantity) || p.quantity < 0) errors.push(`${where}: quantity must be a whole number, 0 or more`);
     if (p.paypalLink && !/^https:\/\//.test(p.paypalLink)) errors.push(`${where}: paypalLink must start with https://`);
   });
   if (!(data.paintings || []).length) warnings.push("content/items is empty — the shop will show no items");
@@ -36,6 +37,8 @@ if (data) {
   if (a.paypal && /\s/.test(a.paypal)) errors.push(`content/settings.json: paypal "${a.paypal}" should be just the PayPal.me username`);
   if (!a.paypal) warnings.push("content/settings.json: paypal is empty — the Buy with PayPal button stays hidden");
   if (!a.email && !a.instagram) warnings.push("content/settings.json: email and instagram are both empty — visitors have no way to get in touch");
+  if (a.checkoutApi && !/^https:\/\/[^\s/]+/.test(a.checkoutApi)) errors.push(`content/settings.json: checkoutApi "${a.checkoutApi}" must be an https:// address`);
+  if (a.checkoutApi && !a.paypalClientId) warnings.push("content/settings.json: checkoutApi is set but paypalClientId is empty — checkout stays off");
   if (a.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email)) errors.push(`content/settings.json: email "${a.email}" is not a valid address`);
 
   const pg = data.pages || {};
