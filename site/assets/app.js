@@ -34,7 +34,7 @@
   const stockOf = (p) => (p.status === "sold" ? 0 : Number.isFinite(Number(p.quantity)) ? Math.max(0, Number(p.quantity)) : 1);
   const isSold = (p) => stockOf(p) === 0;
   const stockLabel = (p) => { const n = stockOf(p); return n === 0 ? "Sold out" : `${n} available`; };
-  const stockClass = (p) => { const n = stockOf(p); return n === 0 ? "sold" : n === 1 ? "last" : "ok"; };
+  const stockClass = (p) => (stockOf(p) === 0 ? "sold" : "ok");
 
   // Images fade in once decoded; a failed image shows the mat instead of a broken icon.
   function img(attrs) {
