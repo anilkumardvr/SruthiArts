@@ -1,0 +1,23 @@
+# Cloudflare Worker for checkout, stock updates, WhatsApp alerts and admin login.
+# Deploy: npx wrangler deploy   (or let .github/workflows/worker.yml do it on push)
+name = "sruthiarts-checkout"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://anilkumardvr.github.io"
+GITHUB_REPO = "anilkumardvr/SruthiArts"
+GITHUB_BRANCH = "main"
+PAYPAL_ENV = "sandbox"          # switch to "live" after a successful test purchase
+# PAYPAL_CLIENT_ID = ""         # public; set here or in the dashboard
+# GITHUB_OAUTH_CLIENT_ID = ""   # public; optional one-click admin login
+
+# Orders are kept here (private). Create it once: npx wrangler kv namespace create ORDERS
+# then paste the id below.
+[[kv_namespaces]]
+binding = "ORDERS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Secrets are never stored in this file. Set them with `npx wrangler secret put NAME` or in the dashboard:
+#   GITHUB_TOKEN, PAYPAL_CLIENT_SECRET, GITHUB_OAUTH_CLIENT_SECRET,
+#   CALLMEBOT_PHONE + CALLMEBOT_APIKEY  (or WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TO)
