@@ -43,7 +43,7 @@ The Worker updates stock by editing `content/items/*.json`.
 
 | Name | Type | Value |
 | --- | --- | --- |
-| `ALLOWED_ORIGINS` | Text | `https://anilkumardvr.github.io` |
+| `ALLOWED_ORIGINS` | Text | `https://www.sruthiarts.com,https://sruthiarts.com,https://anilkumardvr.github.io` |
 | `GITHUB_REPO` | Text | `anilkumardvr/SruthiArts` |
 | `GITHUB_BRANCH` | Text | `main` |
 | `PAYPAL_ENV` | Text | `sandbox` (change to `live` later) |
