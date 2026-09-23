@@ -88,7 +88,7 @@ About a minute later every available item shows PayPal buttons. Then update **Pa
 
 Instead of pasting a token:
 1. GitHub → **Settings → Developer settings → OAuth Apps → New OAuth App**.
-   Homepage: `https://anilkumardvr.github.io/SruthiArts/`. Callback URL: `https://<your worker address>/callback`.
+   Homepage: `https://www.sruthiarts.com/`. Callback URL: `https://<your worker address>/callback`.
 2. Add Worker text variable `GITHUB_OAUTH_CLIENT_ID` and secret `GITHUB_OAUTH_CLIENT_SECRET`.
 3. The studio login page now shows **Continue with GitHub**. The account must be a collaborator on the repo.
 4. The classic editor can use the same login: add `base_url: https://<your worker address>` under `backend:` in `site/admin/classic/config.yml`.
