@@ -5,7 +5,7 @@ main = "worker.js"
 compatibility_date = "2026-09-01"
 
 [vars]
-ALLOWED_ORIGINS = "https://anilkumardvr.github.io"
+ALLOWED_ORIGINS = "https://www.sruthiarts.com,https://sruthiarts.com,https://anilkumardvr.github.io"
 GITHUB_REPO = "anilkumardvr/SruthiArts"
 GITHUB_BRANCH = "main"
 PAYPAL_ENV = "sandbox"          # switch to "live" after a successful test purchase
