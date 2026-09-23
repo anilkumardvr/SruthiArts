@@ -124,10 +124,10 @@
   // Fallback when checkout isn't set up: PayPal.me link with the price filled in, or a per-item PayPal link.
   function paypalUrl(p) {
     if (p.paypalLink) return p.paypalLink;
-    const user = (state.artist.paypal || "").replace(/^https?:\/\/(www\.)?paypal\.me\//i, "").replace(/\/.*$/, "").trim();
+    const user = (state.artist.paypal || "").replace(/^https?:\/\/(www\.)?paypal\.me\//i, "").replace(/^paypal\.me\//i, "").trim().replace(/^@/, "").replace(/[/?#].*$/, "");
     return user ? `https://www.paypal.me/${user}/${p.price}${state.artist.currency || "CAD"}` : "";
   }
-  const checkoutOn = () => Boolean(state.artist.checkoutApi && state.artist.paypalClientId);
+  const checkoutOn = () => /^https:\/\//.test(state.artist.checkoutApi || "") && !/paypal\.(me|com)/i.test(state.artist.checkoutApi) && /^[A-Za-z0-9_-]{40,}$/.test(state.artist.paypalClientId || "");
   const api = (path) => state.artist.checkoutApi.replace(/\/+$/, "") + path;
 
   function iconLink(cls, href, icon, label) {
