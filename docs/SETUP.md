@@ -5,15 +5,15 @@ The site works without any of this: buyers use the PayPal.me link or Instagram, 
 How it fits together:
 
 ```
-Buyer taps "Pay" ──► PayPal checkout (card or PayPal)
+Buyer adds pieces to the cart ──► enters delivery address (or picks Pickup) ──► pays with PayPal or card
         │
         ▼
 Cloudflare Worker (worker/worker.js)
-  1. checks stock and the real price in content/items/<item>.json
+  1. checks stock and real prices in content/items/*.json, adds the delivery fee from settings
   2. creates and captures the PayPal order
-  3. lowers "quantity" in the repo (0 = Sold)  ──► GitHub Actions redeploys the site (~1 min)
-  4. saves the order privately (Cloudflare KV)  ──► Studio → Orders tab
-  5. sends Sruthi a WhatsApp message with the item, amount and delivery address
+  3. lowers "quantity" in the repo for each piece (0 = Sold)  ──► site redeploys (~1 min)
+  4. saves the order with the address privately (Cloudflare KV)  ──► Studio → Orders
+  5. sends Sruthi a WhatsApp message with the items, amount and address
 ```
 
 Buyer details never go into the repo, because it's public.
@@ -74,15 +74,19 @@ The Worker health page shows `"whatsapp": true` when either option is set up.
 In the studio (**/admin → Settings → Checkout**):
 1. **Checkout server URL**: the Worker address from step 3.
 2. **PayPal client ID**: the same Client ID as the Worker (sandbox first).
-3. **Save settings**, then **Test connection**. All four checks should turn green (GitHub login is optional; see step 7).
+3. Leave **Test mode** on for now: the cart then only appears at `https://www.sruthiarts.com/?test`, so customers can't see it while you test with sandbox money.
+4. Set the **Delivery & pickup** fees (Canada, USA, rest of the world) and whether pickup is offered.
+5. **Save settings**, then **Test connection**. All four checks should turn green (GitHub login is optional; see step 7).
 
-About a minute later every available item shows PayPal buttons. Then update **Page → How to buy** so the steps describe paying with PayPal.
+About a minute later, every available piece at `/?test` shows **Add to cart** and **Buy now**. Then update **Page → How to buy** so the steps describe paying with PayPal.
 
 ## 6. Test, then go live
 
 1. With `PAYPAL_ENV = sandbox`, buy something using a **sandbox buyer** account from developer.paypal.com → Sandbox accounts.
 2. Check that the quantity went down on the site, the order appears in **Studio → Orders**, and the WhatsApp message arrived.
-3. Switch to live: set `PAYPAL_ENV = live`, replace `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` with the **Live** credentials, and put the live Client ID in **Studio → Settings**.
+3. Switch to live: set `PAYPAL_ENV = live`, replace `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` with the **Live** credentials, put the live Client ID in **Studio → Settings**, and turn **Test mode** off. Update **Page → How to buy** to describe the cart.
+
+**Studio → Orders** lists every order with the delivery address, phone and email. Filter by status or product, switch to **By product** to see who gets each piece, copy addresses, add tracking numbers, and **Download CSV** for shipping labels.
 
 ## 7. Optional: "Continue with GitHub" login for the studio
 
