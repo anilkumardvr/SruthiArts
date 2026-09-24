@@ -35,6 +35,7 @@
     return n;
   };
   const ICON = {
+    multi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="3" width="13" height="13" rx="2.5"/><path d="M16 19.5a1.5 1.5 0 0 1-1.5 1.5H5.5A2.5 2.5 0 0 1 3 18.5v-9A1.5 1.5 0 0 1 4.5 8"/></svg>',
     grid: '<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg>',
     bag: '<svg viewBox="0 0 24 24"><path d="M5 8h14l-1.3 11.2a1.5 1.5 0 0 1-1.5 1.3H7.8a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg>',
     plus: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/></svg>',
@@ -46,7 +47,7 @@
     heart: '<svg class="heart" viewBox="0 0 24 24"><defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f2c46b"/><stop offset=".5" stop-color="#e0789c"/><stop offset="1" stop-color="#a8325e"/></linearGradient></defs><path d="M12 21s-7.5-4.6-9.6-9.2C.8 8.2 3 4 6.9 4c2.2 0 3.7 1.2 5.1 3 1.4-1.8 2.9-3 5.1-3 3.9 0 6.1 4.2 4.5 7.8C19.5 16.4 12 21 12 21z"/></svg>',
     cart: '<svg viewBox="0 0 24 24"><path d="M5 8h14l-1.3 11.2a1.5 1.5 0 0 1-1.5 1.3H7.8a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg>',
   };
-  const LOGO = "<svg class=\"logo-mark\" viewBox=\"0 0 200 64\" aria-hidden=\"true\" focusable=\"false\"><defs><linearGradient id=\"lgfA\" x1=\"0\" x2=\"1\"><stop offset=\"0\" stop-color=\"#e0789c\" stop-opacity=\"0\"/><stop offset=\".22\" stop-color=\"#e0789c\"/><stop offset=\".8\" stop-color=\"#c8927a\"/><stop offset=\"1\" stop-color=\"#c8927a\" stop-opacity=\"0\"/></linearGradient></defs><path class=\"lg-flourish\" d=\"M6 53c34-10 64 8 104-2 24-6 40-15 66-10\" fill=\"none\" stroke=\"url(#lgfA)\" stroke-width=\"1.8\" stroke-linecap=\"round\"/><text class=\"lg-word\" x=\"86\" y=\"42\" text-anchor=\"middle\" font-family=\"'Mrs Saint Delafield', 'Brush Script MT', cursive\" font-size=\"48\" fill=\"currentColor\">Sruthi</text><path class=\"lg-moon\" d=\"M171 7a8.5 8.5 0 1 0 7.4 12.3 6.6 6.6 0 1 1-7.4-12.3z\" fill=\"#f2c46b\"/><path class=\"lg-spark\" d=\"M20 10l2.4 5.6 5.6 2.4-5.6 2.4L20 26l-2.4-5.6-5.6-2.4 5.6-2.4z\" fill=\"#e0789c\"/><path class=\"lg-spark s2\" d=\"M188 30l1.5 3.5 3.5 1.5-3.5 1.5-1.5 3.5-1.5-3.5-3.5-1.5 3.5-1.5z\" fill=\"#c8927a\"/><text class=\"lg-arts\" x=\"178\" y=\"56\" text-anchor=\"middle\" font-family=\"Karla, system-ui, sans-serif\" font-weight=\"700\" font-size=\"9\" letter-spacing=\"3.6\" fill=\"#a8325e\">ARTS</text></svg>";
+  const LOGO = '<span class="wordmark"><span class="wm-s">SRUTHI</span><span class="wm-dot">·</span><span class="wm-a">ARTS</span></span>';
   const logo = (tag = "span") => el(tag, { class: "logo", "aria-label": "Sruthi Arts", html: LOGO });
   const icon = (name, cls) => el("span", { class: cls || "", html: ICON[name], "aria-hidden": "true", style: "display:contents" });
 
@@ -66,6 +67,9 @@
   const imgUrl = (p) => (p ? (p.startsWith("blob:") ? p : `https://raw.githubusercontent.com/${REPO}/${BRANCH}/site/${relImg(p)}`) : "");
   const stockOf = (it) => (it.status === "sold" ? 0 : Number.isFinite(Number(it.quantity)) ? Math.max(0, Math.floor(Number(it.quantity))) : 1);
   const catLabel = (id) => (CATS.find((c) => c.id === id) || { label: id || "Uncategorized" }).label;
+  // Every photo of a post, cover first ("image" is the cover, "images" lists them all).
+  const photosOfItem = (it) => [...new Set([it.image, ...(Array.isArray(it.images) ? it.images : [])].filter((x) => typeof x === "string" && x))];
+  const MAX_PHOTOS = 10;
   const money = (n) => { try { return new Intl.NumberFormat("en-CA", { style: "currency", currency: S.settings.currency || "CAD", maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(n); } catch { return `$${n}`; } };
   const checkoutApi = () => (S.settings.checkoutApi || S.site.checkoutApi || "").replace(/\/+$/, "");
 
@@ -301,6 +305,7 @@
     const im = el("img", { src: it._blob || imgUrl(it.image), alt: "", loading: i < 9 ? "eager" : "lazy", onload: (e) => e.target.classList.add("ok"), onerror: (e) => e.target.classList.add("broken") });
     return el("button", { class: `tile${left === 0 ? " is-sold" : ""}${it._new ? " new" : ""}`, style: `--i:${Math.min(i, 15)}`, "aria-label": `${it.title}, ${left ? `${left} available` : "sold"}`, onclick: () => openPost(it) },
       im,
+      photosOfItem(it).length > 1 ? el("span", { class: "multi", html: ICON.multi }) : null,
       left === 0 ? el("span", { class: "badge sold", text: "Sold" }) : left > 1 ? el("span", { class: "badge", text: `×${left}` }) : null,
       el("span", { class: "price-tag", text: money(it.price) }));
   }
@@ -333,6 +338,21 @@
   }
   const head = (title, left, right) => el("div", { class: "sheet-head" }, left || el("span"), el("h2", { text: title }), right || el("span"));
 
+  // Swipeable photos with dots, like an Instagram carousel.
+  function postMedia(it) {
+    const urls = it._urls || photosOfItem(it).map(imgUrl);
+    const car = el("div", { class: "car" }, urls.map((u, i) => el("img", { src: u, alt: urls.length > 1 ? `${it.alt || it.title} (${i + 1} of ${urls.length})` : it.alt || it.title })));
+    if (urls.length < 2) return el("div", { class: "post-media" }, car);
+    const count = el("span", { class: "car-count", text: `1/${urls.length}` });
+    const dots = el("div", { class: "car-dots" }, urls.map((_, i) => el("i", { class: i ? "" : "on" })));
+    car.addEventListener("scroll", () => {
+      const k = Math.round(car.scrollLeft / car.clientWidth);
+      [...dots.children].forEach((d, i) => d.classList.toggle("on", i === k));
+      count.textContent = `${k + 1}/${urls.length}`;
+    }, { passive: true });
+    return el("div", { class: "post-media" }, car, count, dots);
+  }
+
   function openPost(it) {
     let qty = stockOf(it);
     const out = el("output", { text: String(qty) });
@@ -343,7 +363,7 @@
       el("div", { class: "two" }, el("button", { class: "btn light", onclick: () => (confirmBox.hidden = true) }, "Keep it"), el("button", { class: "btn danger", onclick: () => remove() }, "Delete")));
     const s = sheet(el("div", {},
       head(it.title, el("button", { class: "txt plain", onclick: () => s.close() }, "Close"), el("button", { class: "txt", onclick: () => { s.close(); setTimeout(() => openComposer(it), 230); } }, "Edit")),
-      el("div", { class: "post-media" }, el("img", { src: it._blob || imgUrl(it.image), alt: it.alt || it.title })),
+      postMedia(it),
       el("div", { class: "post-meta" },
         el("h3", { text: `${it.title} · ${money(it.price)}` }),
         it.description ? el("p", { class: "cap", text: it.description }) : null,
@@ -399,32 +419,79 @@
     const d = editing
       ? { ...existing }
       : { title: "", description: "", category: S.filter && CATS.some((c) => c.id === S.filter) ? S.filter : "originals", price: "", quantity: 1, medium: "Acrylic on canvas", width: "", height: "", alt: "" };
-    let photo = null; // { blob, url, ext }
+    // Photos: existing ones have a path; new ones have a blob until they're uploaded.
+    let photos = editing ? photosOfItem(existing).map((path, i) => ({ path, url: (existing._urls && existing._urls[i]) || imgUrl(path) })) : [];
+    let sel = 0, formShown = false;
     const shareBtn = el("button", { class: "txt", disabled: !editing, onclick: () => share() }, editing ? "Save" : "Share");
     const body = el("div");
+    const media = el("div", { class: "media-edit" });
     const s = sheet(el("div", {}, head(editing ? "Edit post" : "New post", el("button", { class: "txt plain", onclick: () => s.close() }, "Cancel"), shareBtn), body), { full: true });
-    const fileInput = el("input", { type: "file", accept: "image/*", hidden: true, onchange: (e) => pick(e.target.files[0]) });
+    const fileInput = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true, onchange: (e) => { pick([...e.target.files]); e.target.value = ""; } });
 
-    async function pick(file) {
-      if (!file) return;
-      try { photo = await processImage(file); d._preview = photo.url; showForm(); }
-      catch (e) { toast(e.message, "err"); }
+    async function pick(files) {
+      files = files.filter(Boolean);
+      if (!files.length) return;
+      const room = MAX_PHOTOS - photos.length;
+      if (room <= 0) return toast(`A post can have up to ${MAX_PHOTOS} photos.`, "err");
+      if (files.length > room) toast(`Added the first ${room}. A post can have up to ${MAX_PHOTOS} photos.`);
+      const before = photos.length;
+      if (formShown) media.classList.add("busy");
+      if (files.length > 1) toast(`Preparing ${Math.min(files.length, room)} photos…`);
+      for (const f of files.slice(0, room)) {
+        try { photos.push(await processImage(f)); } catch (e) { toast(e.message, "err"); }
+      }
+      media.classList.remove("busy");
+      if (photos.length === before) return;
+      sel = before; // show the first new photo
+      if (formShown) renderMedia(); else showForm();
     }
     function showPicker() {
-      const zone = el("label", { class: "picker" }, icon("photo"), el("h3", { text: "Drag a photo here" }), el("p", { text: "or" }), el("span", { class: "btn" }, "Select from your device"), fileInput);
+      const zone = el("label", { class: "picker" }, icon("photo"), el("h3", { text: "Drag photos here" }), el("p", { text: `Up to ${MAX_PHOTOS} photos. The first one is the cover.` }), el("span", { class: "btn" }, "Select from your device"), fileInput);
       ["dragenter", "dragover"].forEach((t) => zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.add("drag"); }));
       ["dragleave", "drop"].forEach((t) => zone.addEventListener(t, (e) => { e.preventDefault(); zone.classList.remove("drag"); }));
-      zone.addEventListener("drop", (e) => pick(e.dataTransfer.files[0]));
+      zone.addEventListener("drop", (e) => pick([...e.dataTransfer.files]));
       body.replaceChildren(zone);
     }
+    function renderMedia() {
+      const cur = photos[sel];
+      const many = photos.length > 1;
+      media.replaceChildren(
+        el("div", { class: "preview" },
+          cur ? el("img", { src: cur.url, alt: "" }) : null,
+          many ? el("span", { class: "count", text: `${sel + 1}/${photos.length}` }) : null,
+          sel === 0 && many ? el("span", { class: "cover-flag", text: "Cover" }) : null,
+          photos.length < MAX_PHOTOS ? el("button", { class: "swap", type: "button", onclick: () => fileInput.click() }, "+ Add photos") : null,
+          fileInput),
+        el("div", { class: "thumbs" },
+          photos.map((ph, i) => el("div", { class: `thumb${i === sel ? " on" : ""}`, style: `--i:${i}` },
+            el("button", { type: "button", class: "pick", "aria-label": `Show photo ${i + 1}${i === 0 ? " (cover)" : ""}`, onclick: () => { sel = i; renderMedia(); } }, el("img", { src: ph.url, alt: "" })),
+            i === 0 ? el("span", { class: "cover", text: "Cover" }) : null,
+            el("button", { type: "button", class: "x", "aria-label": `Remove photo ${i + 1}`, onclick: () => removeAt(i) }, "×"))),
+          photos.length < MAX_PHOTOS ? el("button", { type: "button", class: "thumb add", "aria-label": "Add photos", onclick: () => fileInput.click() }, "+") : null),
+        many ? el("div", { class: "thumb-actions" },
+          el("button", { type: "button", class: "btn light small", disabled: sel === 0, onclick: () => move(-1) }, "← Move"),
+          el("button", { type: "button", class: "btn light small", disabled: sel === 0, onclick: () => makeCover() }, "Make cover"),
+          el("button", { type: "button", class: "btn light small", disabled: sel === photos.length - 1, onclick: () => move(1) }, "Move →")) : null,
+        el("p", { class: "media-hint", text: many ? "The cover shows in the shop grid. Buyers swipe to see the rest." : `Tap + to add more angles or close-ups (up to ${MAX_PHOTOS}).` }));
+    }
+    function removeAt(i) {
+      if (photos.length === 1) return toast("A post needs at least one photo. Add another first, then remove this one.", "err");
+      photos.splice(i, 1);
+      sel = Math.min(i === sel ? i : sel > i ? sel - 1 : sel, photos.length - 1);
+      renderMedia();
+    }
+    function move(d) { const j = sel + d; if (j < 0 || j >= photos.length) return; [photos[sel], photos[j]] = [photos[j], photos[sel]]; sel = j; renderMedia(); }
+    function makeCover() { photos.unshift(photos.splice(sel, 1)[0]); sel = 0; renderMedia(); toast("Cover updated"); }
     function showForm() {
+      formShown = true;
       shareBtn.disabled = false;
       const qOut = el("output", { text: String(d.quantity ?? 1) });
       const qBump = (n) => { d.quantity = Math.max(0, Math.min(999, Number(d.quantity || 0) + n)); qOut.textContent = String(d.quantity); qOut.classList.remove("bump"); void qOut.offsetWidth; qOut.classList.add("bump"); };
       const bind = (key, attrs = {}) => el(attrs.tag || "input", { ...attrs, tag: null, value: d[key] ?? "", oninput: (e) => { d[key] = e.target.value; } });
       const catChips = el("div", { class: "cat-chips" }, CATS.map((c) => el("button", { type: "button", class: "chip", "aria-pressed": String(d.category === c.id), onclick: (e) => { d.category = c.id; [...catChips.children].forEach((b) => b.setAttribute("aria-pressed", "false")); e.currentTarget.setAttribute("aria-pressed", "true"); } }, c.label)));
+      renderMedia();
       body.replaceChildren(
-        el("div", { class: "preview" }, el("img", { src: d._preview || d._blob || imgUrl(d.image), alt: "" }), el("button", { class: "swap", type: "button", onclick: () => fileInput.click() }, "Change photo"), fileInput),
+        media,
         el("div", { class: "sheet-body" },
           el("label", { class: "field" }, el("span", { text: "Title" }), bind("title", { type: "text", placeholder: "e.g. Rose Lantern", maxlength: 80 })),
           el("label", { class: "field" }, el("span", { text: "Caption" }), bind("description", { tag: "textarea", placeholder: "Write a caption… what inspired it, colours, story" })),
@@ -445,7 +512,7 @@
       const price = Number(d.price);
       if (!title) return toast("Add a title first.", "err");
       if (!(price > 0)) return toast("Add a price.", "err");
-      if (!editing && !photo) return toast("Choose a photo.", "err");
+      if (!photos.length) return toast("Add at least one photo.", "err");
       const width = Math.max(1, Math.round(Number(d.width) || 1)), height = Math.max(1, Math.round(Number(d.height) || 1));
       const prog = document.getElementById("progress"); const bar = prog && prog.firstChild;
       const setP = (p) => { if (prog) { prog.hidden = false; bar.style.width = `${p}%`; } };
@@ -453,18 +520,21 @@
       try {
         let id = editing ? existing.id : slugify(title) || `item-${Date.now().toString(36)}`;
         if (!editing) { let n = 2; const base = id; while (S.items.some((x) => x.id === id)) id = `${base}-${n++}`; }
-        let image = editing ? existing.image : "";
-        setP(15);
-        if (photo) {
-          const file = `${id}-${Date.now().toString(36)}.${photo.ext}`;
-          await putFile(`site/images/paintings/${file}`, await blobToB64(photo.blob), `Admin: upload photo for ${id}`);
-          image = `images/paintings/${file}`;
+        setP(8);
+        const fresh = photos.filter((ph) => ph.blob);
+        let done = 0;
+        for (const ph of fresh) {
+          const file = `${id}-${Date.now().toString(36)}${done}.${ph.ext}`;
+          await putFile(`site/images/paintings/${file}`, await blobToB64(ph.blob), `Admin: upload photo ${done + 1} of ${fresh.length} for ${id}`);
+          ph.path = `images/paintings/${file}`; ph.blob = null; // uploaded: a retry won't upload it again
+          setP(8 + Math.round((60 * ++done) / fresh.length));
         }
-        setP(65);
+        const images = photos.map((ph) => ph.path);
+        setP(70);
         const qty = Math.max(0, Math.round(Number(d.quantity ?? 1)));
         const item = {
           ...(editing ? stripPrivate(existing) : {}),
-          title, category: d.category, image, alt: String(d.alt || "").trim() || title,
+          title, category: d.category, image: images[0], images, alt: String(d.alt || "").trim() || title,
           description: String(d.description || "").trim() || title, medium: d.medium || MEDIUMS[0], width, height, price,
           quantity: qty, status: qty > 0 ? "available" : "sold", date: editing ? existing.date || nowLocal() : nowLocal(),
         };
@@ -472,7 +542,8 @@
         const r = await putJson(path, item, `Admin: ${editing ? "update" : "add"} ${id}`, editing ? (await getJson(path)).sha : undefined);
         setP(100);
         const saved = { ...item, id, _sha: r.content.sha, _path: path, _new: !editing };
-        if (photo) { saved.image = image; saved._blob = photo.url; }
+        saved._urls = photos.map((ph) => ph.url);
+        saved._blob = saved._urls[0];
         S.items = editing ? S.items.map((x) => (x === existing ? saved : x)) : [saved, ...S.items];
         body.replaceChildren(el("div", { class: "done-burst" }, el("span", { html: ICON.heart }), el("h3", { text: editing ? "Saved!" : "Shared!" }), el("p", { text: "It will appear in the shop in about a minute." })));
         setTimeout(() => { s.close(); S.tab = "posts"; S.filter = "all"; render(); setTimeout(() => { saved._new = false; }, 1000); }, 1500);
