@@ -364,3 +364,17 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--r
   .ogrid { grid-template-columns: 1fr; }
   .fees { grid-template-columns: 1fr 1fr; }
 }
+.method-pick { display: grid; gap: 8px; }
+.radio-card { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; cursor: pointer; transition: border-color .2s, background .2s; }
+.radio-card:has(input:checked) { border-color: var(--berry); background: var(--soft); }
+.radio-card input { margin-top: 3px; accent-color: var(--berry); width: 18px; height: 18px; }
+.radio-card span { display: grid; gap: 2px; }
+.radio-card small { color: var(--muted); font-size: .8rem; }
+.await-box { display: grid; gap: 10px; padding: 12px; border-radius: 12px; background: #fff8e6; border: 1px dashed var(--gold); }
+.await-box p { margin: 0; font-size: .9rem; }
+.await-banner { border: 0; text-align: left; padding: 12px 14px; border-radius: 12px; background: #fff3cd; color: #6b4a00; font: 600 .9rem var(--body); cursor: pointer; animation: tileIn .4s var(--ease) both; }
+.pill.st-awaiting { background: #fff3cd; color: #8a5a00; }
+.pill.st-new { background: #e8f0fe; color: #1a56b0; }
+.order.v2.st-awaiting { border-left-color: var(--gold); border-left-style: dashed; }
+.order.v2.st-new { border-left-color: #6b9be8; }
+.await-box .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

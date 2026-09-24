@@ -280,7 +280,7 @@
     const btn = document.getElementById("nav-orders");
     if (!btn) return;
     btn.querySelector(".dot")?.remove();
-    const n = (S.orders || []).filter((o) => !o.status || o.status === "new" || o.status === "packed").length;
+    const n = (S.orders || []).filter((o) => !o.status || o.status === "awaiting" || o.status === "new" || o.status === "packed").length;
     if (n) btn.append(el("span", { class: "dot", text: String(n) }));
   }
   function renderView() {
@@ -562,8 +562,9 @@
     const d = o.delivery || { method: "ship", name: (o.shipTo && o.shipTo.name) || (o.buyer && o.buyer.name) || "", email: (o.buyer && o.buyer.email) || "", phone: "", address: null, legacy: (o.shipTo && o.shipTo.address) || "" };
     return Object.assign(o, { _n: true, items, delivery: d, number: o.number || `#${String(o.orderId || "").slice(-6)}`, status: o.status || "new" });
   }
-  const ORDER_STATUS = { new: "New", packed: "Packed", shipped: "Shipped", cancelled: "Cancelled" };
+  const ORDER_STATUS = { awaiting: "Awaiting payment", new: "Paid", packed: "Packed", shipped: "Shipped", cancelled: "Cancelled" };
   const isOpen = (o) => o.status === "new" || o.status === "packed";
+  const isAwaiting = (o) => o.status === "awaiting";
   const addrLines = (o) => {
     const d = o.delivery;
     if (d.method === "pickup") return ["Pickup"];
@@ -584,18 +585,19 @@
     if (S.ordersError) wrap.append(el("p", { class: "warn", text: S.ordersError }));
     if (!all.length) { wrap.append(emptyState("No orders yet", "When someone checks out, the order appears here with their delivery address.")); return wrap; }
 
-    S.ofilter = S.ofilter || "todo"; S.ogroup = S.ogroup || "orders"; S.oproduct = S.oproduct || ""; S.oq = S.oq || "";
-    const live = all.filter((o) => o.status !== "cancelled");
+    S.ofilter = S.ofilter || (all.some(isAwaiting) ? "awaiting" : "todo"); S.ogroup = S.ogroup || "orders"; S.oproduct = S.oproduct || ""; S.oq = S.oq || "";
+    const live = all.filter((o) => o.status !== "cancelled" && o.status !== "awaiting");
+    const awaitingN = all.filter(isAwaiting).length;
     const cur = (live[0] || all[0]).currency;
     wrap.append(el("div", { class: "ostats" },
-      [["Orders", live.length], ["To ship", live.filter(isOpen).length], ["Items sold", live.reduce((t, o) => t + o.items.reduce((u, l) => u + Number(l.qty || 0), 0), 0)], ["Sales", orderMoney(live.reduce((t, o) => t + Number(o.amount || 0), 0), cur)]]
+      [["Paid orders", live.length], [awaitingN ? "Awaiting pay" : "To ship", awaitingN || live.filter(isOpen).length], ["Items sold", live.reduce((t, o) => t + o.items.reduce((u, l) => u + Number(l.qty || 0), 0), 0)], ["Sales", orderMoney(live.reduce((t, o) => t + Number(o.amount || 0), 0), cur)]]
         .map(([k, v], i) => el("div", { class: "ostat", style: `--i:${i}` }, el("b", { text: String(v) }), el("span", { text: k })))));
 
     // Filters
     const products = new Map();
     all.forEach((o) => o.items.forEach((l) => { const p = products.get(l.id) || { id: l.id, title: l.title, qty: 0 }; p.qty += Number(l.qty || 0); products.set(l.id, p); }));
-    const counts = { todo: all.filter(isOpen).length, shipped: all.filter((o) => o.status === "shipped").length, all: all.length, cancelled: all.filter((o) => o.status === "cancelled").length };
-    const chips = el("div", { class: "chips" }, [["todo", "To ship"], ["shipped", "Shipped"], ["all", "All"], ...(counts.cancelled ? [["cancelled", "Cancelled"]] : [])].map(([id, label]) =>
+    const counts = { awaiting: awaitingN, todo: all.filter(isOpen).length, shipped: all.filter((o) => o.status === "shipped").length, all: all.length, cancelled: all.filter((o) => o.status === "cancelled").length };
+    const chips = el("div", { class: "chips" }, [...(awaitingN || S.ofilter === "awaiting" ? [["awaiting", "Awaiting payment"]] : []), ["todo", "To ship"], ["shipped", "Shipped"], ["all", "All"], ...(counts.cancelled ? [["cancelled", "Cancelled"]] : [])].map(([id, label]) =>
       el("button", { class: "chip", "aria-pressed": String(S.ofilter === id), onclick: () => { S.ofilter = id; renderView(); } }, `${label} `, el("small", { text: String(counts[id]) }))));
     const productSel = el("select", { class: "osel", "aria-label": "Filter by product", onchange: (e) => { S.oproduct = e.target.value; renderView(); } },
       el("option", { value: "", text: "All products" }),
@@ -615,7 +617,8 @@
         el("button", { type: "button", class: "btn light small", onclick: () => downloadCsv(shown) }, "Download CSV"),
         el("button", { type: "button", class: "btn light small", "aria-label": "Refresh orders", onclick: async (e) => { e.currentTarget.disabled = true; await loadOrders(); renderNavBadges(); renderView(); toast("Orders refreshed"); } }, "↻"))));
 
-    if (!shown.length) { wrap.append(el("p", { class: "empty-note", text: S.ofilter === "todo" ? "Nothing waiting to ship. 🎉" : "No orders match." })); return wrap; }
+    if (awaitingN && S.ofilter !== "awaiting") wrap.append(el("button", { type: "button", class: "await-banner", onclick: () => { S.ofilter = "awaiting"; renderView(); } }, `${awaitingN} order${awaitingN > 1 ? "s" : ""} waiting for PayPal payment. Check PayPal, then mark them paid →`));
+    if (!shown.length) { wrap.append(el("p", { class: "empty-note", text: S.ofilter === "todo" ? "Nothing waiting to ship. 🎉" : S.ofilter === "awaiting" ? "No unpaid orders." : "No orders match." })); return wrap; }
     if (S.ogroup === "products") wrap.append(byProduct(shown)); else shown.forEach((o, i) => wrap.append(orderCard(o, i)));
     return wrap;
   }
@@ -651,14 +654,19 @@
       el("dl", { class: "omoney" },
         o.subtotal !== undefined ? el("div", {}, el("dt", { text: "Items" }), el("dd", { text: orderMoney(o.subtotal, o.currency) })) : null,
         o.shipping ? el("div", {}, el("dt", { text: "Delivery" }), el("dd", { text: orderMoney(o.shipping, o.currency) })) : null,
-        el("div", { class: "paid" }, el("dt", { text: "Paid" }), el("dd", { text: orderMoney(o.amount, o.currency) }))),
+        el("div", { class: "paid" }, el("dt", { text: isAwaiting(o) ? "To pay" : o.status === "cancelled" && o.payment === "paypalme" ? "Total" : "Paid" }), el("dd", { text: orderMoney(o.amount, o.currency) }))),
       (o.stock || []).some((s) => s.left === null) || o.stockError ? el("p", { class: "warn", text: "Stock wasn't updated automatically for this order. Adjust it on the post." }) : null,
-      o.status !== "cancelled" ? stepsEl : null,
-      o.status !== "cancelled" && d.method !== "pickup" ? tracking : null,
+      isAwaiting(o) ? el("div", { class: "await-box" },
+        el("p", {}, "Customer was sent to your PayPal.me to pay ", el("b", { text: orderMoney(o.amount, o.currency) }), ". When it shows in PayPal (look for ", el("b", { text: o.number }), " or their name), mark it paid. The pieces are reserved until then."),
+        el("div", { class: "two" },
+          el("button", { type: "button", class: "btn", onclick: () => setOrder(o, { status: "new" }, "Marked as paid 💰") }, "Mark paid"),
+          el("a", { class: "btn light", href: "https://www.paypal.com/myaccount/activities/", target: "_blank", rel: "noopener" }, "Open PayPal"))) : null,
+      o.status !== "cancelled" && !isAwaiting(o) ? stepsEl : null,
+      o.status !== "cancelled" && !isAwaiting(o) && d.method !== "pickup" ? tracking : null,
       el("div", { class: "ofoot" },
         o.status === "cancelled"
           ? el("button", { type: "button", class: "link", onclick: () => setOrder(o, { status: "new" }, "Order restored") }, "Restore order")
-          : el("button", { type: "button", class: "link muted", onclick: () => { if (confirm(`Mark ${o.number} as cancelled? Refund the customer in PayPal first; this only changes the label here.`)) setOrder(o, { status: "cancelled" }, "Order cancelled"); } }, "Cancel order")));
+          : el("button", { type: "button", class: "link muted", onclick: () => { if (confirm(isAwaiting(o) ? `Cancel ${o.number}? The reserved pieces go back on sale.` : `Mark ${o.number} as cancelled? Refund the customer in PayPal first. Pieces from a PayPal.me order go back on sale.`)) setOrder(o, { status: "cancelled" }, "Order cancelled"); } }, isAwaiting(o) ? "Cancel (not paid) and put pieces back" : "Cancel order")));
   }
 
   // Everything that needs sending, grouped by piece: who bought it and where it goes.
@@ -758,6 +766,8 @@
     const dirty = () => { S.dirty = true; saveBar.hidden = false; };
     const inp = (key, label, attrs = {}, hint) => el("label", { class: "field" }, el("span", { text: label }), el("input", { type: "text", ...attrs, value: d[key] || "", oninput: (e) => { d[key] = e.target.value.trim(); dirty(); } }), hint ? el("small", { text: hint }) : null);
     const status = el("div", { class: "cat-chips" });
+    const clientRow = inp("paypalClientId", "PayPal client ID", {}, "Public ID from developer.paypal.com (Business account). Only for automatic checkout.");
+    clientRow.hidden = (d.checkoutMode || "paypalme") !== "paypal";
     const ship = () => (d.shipping = d.shipping && typeof d.shipping === "object" ? d.shipping : { CA: 15, US: 25, intl: 40, pickup: true, pickupNote: "" });
     const pickupNote = el("label", { class: "field", hidden: ship().pickup === false }, el("span", { text: "Pickup details shown to buyers" }),
       el("input", { type: "text", maxlength: 120, placeholder: "e.g. Downtown Toronto. Sruthi will message you to set a time.", value: ship().pickupNote || "", oninput: (e) => { ship().pickupNote = e.target.value; dirty(); } }));
@@ -766,7 +776,7 @@
       try {
         const h = await (await fetch(`${(d.checkoutApi || "").replace(/\/+$/, "")}/`)).json();
         const chip = (ok, label) => el("span", { class: `pill${ok ? " shipped" : ""}`, text: `${ok ? "✓" : "✗"} ${label}` });
-        status.replaceChildren(chip(h.checkout, `PayPal (${h.paypalEnv})`), chip(h.orders, "Orders storage"), chip(h.whatsapp, "WhatsApp alerts"), chip(h.login, "GitHub login"));
+        status.replaceChildren((d.checkoutMode === "paypal" ? chip(h.checkout, `PayPal checkout (${h.paypalEnv})`) : chip(h.paypalme, "Orders + stock (PayPal.me)")), chip(h.orders, "Orders storage"), chip(h.whatsapp, "WhatsApp alerts"), chip(h.login, "GitHub login"));
       } catch { status.replaceChildren(el("span", { class: "pill", text: "Can't reach the server. Check the URL." })); }
     };
     return el("div", { class: "forms" },
@@ -775,8 +785,12 @@
         inp("email", "Email (optional)", { type: "email" }),
         el("label", { class: "field" }, el("span", { text: "Currency" }), el("select", { onchange: (e) => { d.currency = e.target.value; dirty(); } }, CURRENCIES.map((c) => el("option", { value: c, selected: (d.currency || "CAD") === c ? true : null, text: c }))))),
       el("section", { class: "card", style: "--i:1" }, el("h2", { text: "Checkout" }),
+        el("div", { class: "field" }, el("span", { text: "How customers pay" }),
+          el("div", { class: "method-pick" },
+            [["paypalme", "PayPal.me link", "Customer pays the total on your PayPal.me page. You tap Paid when it arrives."], ["paypal", "Automatic PayPal checkout", "Card or PayPal inside the site; paid orders arrive by themselves. Needs a PayPal Business app."]].map(([id, t, sub]) =>
+              el("label", { class: "radio-card" }, el("input", { type: "radio", name: "paymode", value: id, checked: (d.checkoutMode || "paypalme") === id, onchange: () => { d.checkoutMode = id; dirty(); clientRow.hidden = id !== "paypal"; } }), el("span", {}, el("b", { text: t }), el("small", { text: sub })))))),
         inp("checkoutApi", "Checkout server URL", { type: "url", placeholder: "https://sruthiarts-checkout.<you>.workers.dev" }, "Leave empty until the checkout server is set up (docs/SETUP.md)."),
-        inp("paypalClientId", "PayPal client ID", {}, "Public ID from developer.paypal.com. With the server URL, this turns on the PayPal buttons and automatic stock updates."),
+        clientRow,
         inp("paypal", "PayPal.me username", { placeholder: "SruthirikaKoora" }, "Just the name after paypal.me/, without @. Used for the Buy button until checkout is set up."),
         el("label", { class: "switch" }, el("input", { type: "checkbox", checked: Boolean(d.checkoutTest), onchange: (e) => { d.checkoutTest = e.target.checked; dirty(); } }), el("span", { text: "Test mode: only show the cart at sruthiarts.com/?test" })),
         el("button", { class: "btn light", onclick: test }, "Test connection"), status),
@@ -817,7 +831,9 @@
         if (!ok) return toast("Checkout server URL should be your Cloudflare Worker address (https://…workers.dev), not a PayPal link. Leave it empty until checkout is set up.", "err");
       }
       if (clean.paypalClientId && !/^[A-Za-z0-9_-]{40,}$/.test(clean.paypalClientId)) return toast("PayPal client ID is the long code from developer.paypal.com → Apps & Credentials, not a username. Leave it empty until checkout is set up.", "err");
-      if (clean.checkoutApi && !clean.paypalClientId) return toast("Add the PayPal client ID too, or clear the checkout server URL.", "err");
+      clean.checkoutMode = clean.checkoutMode === "paypal" ? "paypal" : "paypalme";
+      if (clean.checkoutApi && clean.checkoutMode === "paypal" && !clean.paypalClientId) return toast("Automatic checkout needs the PayPal client ID. Add it, or choose PayPal.me link.", "err");
+      if (clean.checkoutApi && clean.checkoutMode === "paypalme" && !clean.paypal) return toast("Add your PayPal.me username so customers can pay.", "err");
       const r = await putJson("content/settings.json", clean, "Admin: update settings", sha);
       S.settings = clean; S.settingsSha = r.content.sha; S.dirty = false;
       toast("Settings saved"); render(true);
