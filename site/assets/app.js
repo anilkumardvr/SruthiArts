@@ -219,28 +219,268 @@
     return data;
   }
 
-  function checkoutBlock(p) {
-    const left = stockOf(p);
-    state.qty = 1;
-    const note = el("p", { class: "checkout-msg", role: "status" });
-    const total = el("span", { class: "total", text: money(p.price) });
-    const qtyRow = left > 1
-      ? el("div", { class: "qty" },
-          el("span", { text: "Quantity" }),
-          el("div", { class: "stepper" },
-            el("button", { type: "button", "aria-label": "One fewer", onclick: () => setQty(-1) }, "−"),
-            el("output", { id: "qty-out", text: "1" }),
-            el("button", { type: "button", "aria-label": "One more", onclick: () => setQty(1) }, "+")),
-          total)
-      : null;
-    function setQty(d) {
-      state.qty = Math.max(1, Math.min(left, 20, state.qty + d));
-      $("#qty-out").textContent = String(state.qty);
-      total.textContent = money(p.price * state.qty);
-      const out = $("#qty-out"); out.classList.remove("bump"); void out.offsetWidth; out.classList.add("bump");
+  // ---------- Cart and checkout ----------
+  // The cart lives in this browser only (localStorage). Prices, stock and delivery fees are checked again by the
+  // checkout server, so nothing here decides what a buyer pays.
+  const CART_KEY = "sruthiarts.cart";
+  const testParam = /[?&]test\b/.test(location.search);
+  const cartTest = (() => { try { if (testParam) sessionStorage.setItem("sruthiarts.test", "1"); return sessionStorage.getItem("sruthiarts.test") === "1"; } catch { return testParam; } })();
+  // In test mode (Studio → Settings) the cart only appears for people who open the site with ?test.
+  const cartOn = () => checkoutOn() && (!state.artist.checkoutTest || cartTest);
+  let cart = [];
+  try { cart = (JSON.parse(localStorage.getItem(CART_KEY) || "[]") || []).filter((c) => c && typeof c.id === "string" && Number(c.qty) > 0); } catch { cart = []; }
+  const findPiece = (id) => state.paintings.find((p) => p.id === id);
+  const cartLines = () => cart.map((c) => ({ ...c, p: findPiece(c.id) })).filter((c) => c.p);
+  const cartCount = () => cartLines().reduce((t, c) => t + c.qty, 0);
+  const cartSubtotal = () => cartLines().reduce((t, c) => t + Number(c.p.price) * c.qty, 0);
+  function saveCart() {
+    cart = cart.filter((c) => c.qty > 0);
+    try { localStorage.setItem(CART_KEY, JSON.stringify(cart.map(({ id, qty }) => ({ id, qty })))); } catch {}
+    updateCartBadge();
+  }
+  function updateCartBadge() {
+    const n = cartCount();
+    document.querySelectorAll("[data-cart-count]").forEach((b) => { b.textContent = String(n); b.hidden = n === 0; });
+    document.querySelectorAll("[data-cart-open]").forEach((b) => { b.hidden = !cartOn(); b.setAttribute("aria-label", n ? `Cart, ${n} item${n > 1 ? "s" : ""}` : "Cart"); });
+    document.documentElement.classList.toggle("has-cart", cartOn());
+  }
+  function bumpCart() {
+    document.querySelectorAll("[data-cart-open]").forEach((b) => { b.classList.remove("bump"); void b.offsetWidth; b.classList.add("bump"); });
+  }
+  // Returns how many were actually added (stock may cap it).
+  function addToCart(p, qty) {
+    const left = Math.min(stockOf(p), 20);
+    const line = cart.find((c) => c.id === p.id);
+    const before = line ? line.qty : 0;
+    const after = Math.min(left, before + qty);
+    if (line) line.qty = after; else if (after > 0) cart.push({ id: p.id, qty: after });
+    saveCart(); bumpCart();
+    return after - before;
+  }
+  // Keep the cart honest after the shop data reloads: drop sold-out pieces, cap quantities at what's left.
+  function reconcileCart() {
+    const notes = [];
+    cart.forEach((c) => {
+      const p = findPiece(c.id);
+      if (!p) { c.qty = 0; return; }
+      const left = stockOf(p);
+      if (left === 0) { notes.push(`“${p.title}” has sold out and was removed.`); c.qty = 0; }
+      else if (c.qty > left) { notes.push(`Only ${left} of “${p.title}” left, so your cart was updated.`); c.qty = left; }
+    });
+    saveCart();
+    return notes;
+  }
+
+  // Delivery fees (Studio → Settings → Delivery). The server uses the same rule.
+  function shipCfg() {
+    const s = state.artist.shipping || {};
+    const fee = (v, d) => (Number.isFinite(Number(v)) && Number(v) >= 0 && v !== "" ? Number(v) : d);
+    return { CA: fee(s.CA, 15), US: fee(s.US, 25), intl: fee(s.intl, 40), pickup: s.pickup !== false, pickupNote: s.pickupNote || "" };
+  }
+  const feeFor = (d) => { const c = shipCfg(); return d.method === "pickup" ? 0 : d.country === "CA" ? c.CA : d.country === "US" ? c.US : c.intl; };
+  const moneyOrFree = (n) => (n > 0 ? money(n) : "Free");
+
+  const COUNTRY_CODES = "AD AE AF AG AI AL AM AO AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BW BY BZ CA CD CF CG CH CI CK CL CM CN CO CR CV CW CY CZ DE DJ DK DM DO DZ EC EE EG ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GT GU GW GY HK HN HR HT HU ID IE IL IM IN IS IT JE JM JO JP KE KG KH KI KM KN KR KW KY KZ LA LB LC LI LK LR LS LT LU LV MA MC MD ME MF MG MH MK ML MN MO MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RW SA SB SC SE SG SH SI SK SL SM SN SO SR ST SV SX SZ TC TD TG TH TJ TL TM TN TO TR TT TV TW TZ UA UG US UY UZ VA VC VE VG VI VN VU WF WS YT ZA ZM ZW".split(" ");
+  const countryName = (() => { let dn = null; try { dn = new Intl.DisplayNames(["en"], { type: "region" }); } catch {} return (c) => (dn && dn.of(c)) || c; })();
+  const COUNTRIES = ["CA", "US", ...COUNTRY_CODES.filter((c) => c !== "CA" && c !== "US").sort((a, b) => countryName(a).localeCompare(countryName(b)))];
+  const PROVINCES = { AB: "Alberta", BC: "British Columbia", MB: "Manitoba", NB: "New Brunswick", NL: "Newfoundland and Labrador", NS: "Nova Scotia", NT: "Northwest Territories", NU: "Nunavut", ON: "Ontario", PE: "Prince Edward Island", QC: "Quebec", SK: "Saskatchewan", YT: "Yukon" };
+  const STATES = { AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado", CT: "Connecticut", DE: "Delaware", DC: "District of Columbia", FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming", PR: "Puerto Rico" };
+
+  // What the buyer typed. Kept in memory only, so nothing personal stays on a shared device.
+  const buyer = { method: "ship", name: "", email: "", phone: "", country: "CA", line1: "", line2: "", city: "", region: "", postal: "", note: "" };
+  const deliveryPayload = () => ({
+    method: buyer.method, name: buyer.name.trim(), email: buyer.email.trim(), phone: buyer.phone.trim(), note: buyer.note.trim(),
+    ...(buyer.method === "ship" ? { address: { line1: buyer.line1.trim(), line2: buyer.line2.trim(), city: buyer.city.trim(), region: buyer.region.trim(), postal: buyer.postal.trim().toUpperCase(), country: buyer.country } } : {}),
+  });
+  function validateBuyer() {
+    const b = buyer;
+    if (b.name.trim().length < 2) return ["name", "Please enter your full name."];
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.email.trim())) return ["email", "Please enter a valid email address. Your receipt goes there."];
+    if (b.method === "pickup") return b.phone.trim() ? null : ["phone", "Please add a phone number so Sruthi can arrange the pickup."];
+    if (!b.line1.trim()) return ["line1", "Please enter your street address."];
+    if (!b.city.trim()) return ["city", "Please enter your city."];
+    if ((b.country === "CA" || b.country === "US") && !b.region) return ["region", b.country === "CA" ? "Please choose your province." : "Please choose your state."];
+    if (b.country === "CA" && !/^[A-Z]\d[A-Z] ?\d[A-Z]\d$/i.test(b.postal.trim())) return ["postal", "Please enter a valid postal code, like M5V 2T6."];
+    if (b.country === "US" && !/^\d{5}(-\d{4})?$/.test(b.postal.trim())) return ["postal", "Please enter a valid ZIP code, like 10001."];
+    return null;
+  }
+  const addressLines = () => buyer.method === "pickup"
+    ? ["Pickup", shipCfg().pickupNote].filter(Boolean)
+    : [buyer.name, buyer.line1, buyer.line2, [buyer.city, buyer.region, buyer.postal.toUpperCase()].filter(Boolean).join(" "), countryName(buyer.country)].filter(Boolean);
+
+  // ---- Cart panel ----
+  const cartDlg = $("#cart");
+  let cartStep = "cart";
+  function openCart(step = "cart") {
+    if (!cartOn()) return;
+    if (viewer.open) closeViewer();
+    const notes = reconcileCart();
+    showStep(cartLines().length ? step : "cart", notes);
+    if (!cartDlg.open) { cartDlg.classList.remove("is-closing"); cartDlg.showModal(); document.documentElement.classList.add("sheet-open"); }
+  }
+  function closeCart() {
+    if (!cartDlg.open || cartDlg.classList.contains("is-closing")) return;
+    if (reduceMotion) return cartDlg.close();
+    cartDlg.classList.add("is-closing");
+    setTimeout(() => { cartDlg.close(); cartDlg.classList.remove("is-closing"); }, 240);
+  }
+  cartDlg.addEventListener("close", () => { document.documentElement.classList.remove("sheet-open"); if (cartStep === "done") showStep("cart"); });
+  cartDlg.addEventListener("click", (e) => { if (e.target === cartDlg) closeCart(); });
+  cartDlg.addEventListener("cancel", (e) => { e.preventDefault(); closeCart(); });
+  $("#cart-close").addEventListener("click", closeCart);
+  $("#cart-back").addEventListener("click", () => showStep(cartStep === "pay" ? "details" : "cart"));
+  document.querySelectorAll("[data-cart-open]").forEach((b) => b.addEventListener("click", () => openCart()));
+
+  function showStep(step, notes = []) {
+    cartStep = step;
+    const titles = { cart: "Your cart", details: "Delivery details", pay: "Payment", done: "Order placed" };
+    $("#cart-title").textContent = titles[step];
+    $("#cart-back").hidden = step === "cart" || step === "done";
+    const idx = { cart: 0, details: 1, pay: 2, done: 3 }[step];
+    [...$("#cart-steps").children].forEach((li, i) => { li.className = i < idx ? "done" : i === idx ? "on" : ""; });
+    $("#cart-steps").hidden = step === "done";
+    const body = $("#cart-body");
+    const view = step === "cart" ? cartView(notes) : step === "details" ? detailsView() : step === "pay" ? payView() : null;
+    if (view) { body.replaceChildren(view); body.scrollTop = 0; $("#cart-inner").scrollTop = 0; }
+  }
+
+  function stepper(value, min, max, onChange, label) {
+    const out = el("output", { text: String(value) });
+    const set = (d) => { const v = Math.max(min, Math.min(max, value + d)); if (v === value) return; value = v; out.textContent = String(v); out.classList.remove("bump"); void out.offsetWidth; out.classList.add("bump"); onChange(v); };
+    return el("div", { class: "stepper small" },
+      el("button", { type: "button", "aria-label": `One fewer ${label}`, onclick: () => set(-1) }, "−"), out,
+      el("button", { type: "button", "aria-label": `One more ${label}`, disabled: value >= max, onclick: (e) => { set(1); e.currentTarget.disabled = value >= max; } }, "+"));
+  }
+
+  function totalsBlock(withFee) {
+    const sub = cartSubtotal();
+    const fee = withFee ? feeFor(buyer) : null;
+    return el("dl", { class: "totals" },
+      el("div", {}, el("dt", { text: "Subtotal" }), el("dd", { text: money(sub) })),
+      el("div", {}, el("dt", { text: buyer.method === "pickup" && withFee ? "Pickup" : "Delivery" }), el("dd", { text: withFee ? moneyOrFree(fee) : "Next step" })),
+      el("div", { class: "grand" }, el("dt", { text: "Total" }), el("dd", { text: `${money(sub + (fee || 0))} ${state.artist.currency || "CAD"}` })));
+  }
+
+  function cartView(notes) {
+    const lines = cartLines();
+    const wrap = el("div", { class: "cart-view" });
+    if (state.artist.checkoutTest) wrap.append(el("p", { class: "test-banner", text: "Test mode: payments use PayPal's sandbox. No real money is charged." }));
+    notes.forEach((n) => wrap.append(el("p", { class: "cart-note", text: n })));
+    if (!lines.length) {
+      wrap.append(el("div", { class: "cart-empty" },
+        el("div", { class: "ring", "aria-hidden": "true" }),
+        el("p", { class: "big", text: "Your cart is empty" }),
+        el("p", { text: "Open any piece marked Available and tap “Add to cart”." }),
+        el("button", { type: "button", class: "btn", onclick: () => { closeCart(); setTimeout(() => $("#gallery").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" }), 250); } }, "Browse the shop")));
+      return wrap;
     }
-    const box = el("div", { class: "paypal-box", id: "paypal-buttons" }, el("div", { class: "pp-skeleton" }, el("span"), el("span")));
-    const wrap = el("div", { class: "checkout" }, qtyRow, box, note, el("p", { class: "fine", text: "Secure checkout by PayPal. Pay with your PayPal account or any debit or credit card. Your delivery address comes from PayPal." }));
+    const list = el("ul", { class: "cart-lines" }, lines.map((c, i) => {
+      const left = Math.min(stockOf(c.p), 20);
+      const lineTotal = el("span", { class: "line-total", text: money(c.p.price * c.qty) });
+      return el("li", { class: "cart-line", style: `--i:${i}` },
+        el("img", { src: c.p.image, alt: "", width: "80", height: "100", loading: "lazy" }),
+        el("div", { class: "cl-info" },
+          el("p", { class: "cl-title", text: c.p.title }),
+          el("p", { class: "cl-spec", text: `${money(c.p.price)} each · ${left} available` }),
+          el("div", { class: "cl-row" },
+            stepper(c.qty, 1, left, (v) => { const line = cart.find((x) => x.id === c.id); line.qty = v; lineTotal.textContent = money(c.p.price * v); saveCart(); wrap.querySelector(".totals").replaceWith(totalsBlock(false)); }, c.p.title),
+            el("button", { type: "button", class: "cl-remove", onclick: (e) => { const li = e.currentTarget.closest("li"); li.classList.add("leaving"); setTimeout(() => { cart = cart.filter((x) => x.id !== c.id); saveCart(); showStep("cart"); }, reduceMotion ? 0 : 220); } }, "Remove"))),
+        lineTotal);
+    }));
+    wrap.append(list, totalsBlock(false),
+      el("button", { type: "button", class: "btn block", onclick: () => showStep("details") }, "Checkout"),
+      el("p", { class: "fine center", text: "Secure payment by PayPal: PayPal account or any debit or credit card." }));
+    return wrap;
+  }
+
+  function detailsView() {
+    const cfg = shipCfg();
+    if (!cfg.pickup) buyer.method = "ship";
+    const form = el("form", { class: "ship-form", novalidate: true });
+    const err = el("p", { class: "form-error", role: "alert", hidden: true });
+    const field = (key, label, attrs = {}, hint) => {
+      const input = el(attrs.tag || "input", { ...attrs, tag: null, id: `f-${key}`, name: key, value: buyer[key] || "", oninput: (e) => { buyer[key] = e.target.value; e.target.removeAttribute("aria-invalid"); err.hidden = true; } });
+      input.value = buyer[key] || "";
+      return el("label", { class: `field f-${key}` }, el("span", { text: label }), input, hint ? el("small", { text: hint }) : null);
+    };
+    const totalsSlot = el("div", {}, totalsBlock(true));
+    const refreshTotals = () => totalsSlot.replaceChildren(totalsBlock(true));
+
+    const regionSlot = el("div", { class: "region-slot" });
+    function renderRegion() {
+      const opts = buyer.country === "CA" ? PROVINCES : buyer.country === "US" ? STATES : null;
+      if (opts && !opts[buyer.region]) buyer.region = "";
+      regionSlot.replaceChildren(opts
+        ? el("label", { class: "field f-region" }, el("span", { text: buyer.country === "CA" ? "Province" : "State" }),
+            el("select", { id: "f-region", onchange: (e) => { buyer.region = e.target.value; e.target.removeAttribute("aria-invalid"); err.hidden = true; } },
+              el("option", { value: "", text: "Choose…" }),
+              Object.entries(opts).map(([code, name]) => el("option", { value: code, selected: buyer.region === code ? true : null, text: name }))))
+        : field("region", "State / province / region (optional)", { autocomplete: "address-level1" }));
+      const postal = form.querySelector("#f-postal");
+      if (postal) {
+        postal.placeholder = buyer.country === "CA" ? "M5V 2T6" : buyer.country === "US" ? "10001" : "";
+        postal.closest("label").querySelector("span").textContent = buyer.country === "US" ? "ZIP code" : buyer.country === "CA" ? "Postal code" : "Postal code (if any)";
+      }
+    }
+    const address = el("fieldset", { class: "addr" },
+      el("legend", { text: "Delivery address" }),
+      el("label", { class: "field f-country" }, el("span", { text: "Country" }),
+        el("select", { id: "f-country", autocomplete: "country", onchange: (e) => { buyer.country = e.target.value; renderRegion(); refreshTotals(); } },
+          COUNTRIES.map((c) => el("option", { value: c, selected: buyer.country === c ? true : null, text: countryName(c) })))),
+      field("line1", "Street address", { autocomplete: "address-line1", placeholder: "123 Maple Street" }),
+      field("line2", "Apartment, suite, unit (optional)", { autocomplete: "address-line2" }),
+      el("div", { class: "row2" }, field("city", "City", { autocomplete: "address-level2" }), field("postal", "Postal code", { autocomplete: "postal-code", autocapitalize: "characters" })),
+      regionSlot);
+
+    const methods = el("div", { class: "method", role: "radiogroup", "aria-label": "How would you like to get your order?" },
+      [["ship", "Delivery", "Shipped to your door"], ...(cfg.pickup ? [["pickup", "Pickup", cfg.pickupNote || "Collect from Sruthi"]] : [])].map(([id, title, sub]) =>
+        el("button", { type: "button", role: "radio", class: "method-opt", "aria-checked": String(buyer.method === id), onclick: () => { buyer.method = id; methods.querySelectorAll(".method-opt").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.m === id))); address.hidden = id === "pickup"; phoneHint.textContent = id === "pickup" ? "Required for pickup." : "Optional, in case the courier needs it."; refreshTotals(); }, "data-m": id },
+          el("strong", { text: title }), el("small", { text: sub }))));
+    const phoneField = field("phone", "Phone", { type: "tel", autocomplete: "tel", inputmode: "tel" });
+    const phoneHint = el("small", { text: buyer.method === "pickup" ? "Required for pickup." : "Optional, in case the courier needs it." });
+    phoneField.append(phoneHint);
+    address.hidden = buyer.method === "pickup";
+
+    form.append(
+      methods,
+      el("fieldset", { class: "contact-f" }, el("legend", { text: "Your details" }),
+        field("name", "Full name", { autocomplete: "name" }),
+        field("email", "Email", { type: "email", autocomplete: "email", inputmode: "email" }, "For your PayPal receipt and order updates."),
+        phoneField),
+      address,
+      field("note", "Note for Sruthi (optional)", { tag: "textarea", rows: 2, maxlength: 300, placeholder: "Gift message, delivery instructions…" }),
+      totalsSlot, err,
+      el("button", { type: "submit", class: "btn block" }, "Continue to payment"));
+    renderRegion();
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const bad = validateBuyer();
+      if (bad) {
+        err.textContent = bad[1]; err.hidden = false;
+        const f = form.querySelector(`#f-${bad[0]}`);
+        if (f) { f.setAttribute("aria-invalid", "true"); f.focus(); f.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" }); }
+        return;
+      }
+      showStep("pay");
+    });
+    return form;
+  }
+
+  function payView() {
+    const lines = cartLines();
+    const note = el("p", { class: "checkout-msg", role: "status" });
+    const box = el("div", { class: "paypal-box" }, el("div", { class: "pp-skeleton" }, el("span"), el("span")));
+    const wrap = el("div", { class: "pay-view" },
+      state.artist.checkoutTest ? el("p", { class: "test-banner", text: "Test mode: use a PayPal sandbox buyer account. No real money is charged." }) : null,
+      el("section", { class: "recap" },
+        el("div", { class: "recap-head" }, el("h3", { text: buyer.method === "pickup" ? "Pickup" : "Delivering to" }), el("button", { type: "button", class: "link", onclick: () => showStep("details") }, "Change")),
+        el("address", {}, addressLines().map((l) => el("span", { text: l }))),
+        el("p", { class: "recap-contact", text: [buyer.email.trim(), buyer.phone.trim()].filter(Boolean).join(" · ") })),
+      el("section", { class: "recap" },
+        el("div", { class: "recap-head" }, el("h3", { text: `${cartCount()} item${cartCount() > 1 ? "s" : ""}` }), el("button", { type: "button", class: "link", onclick: () => showStep("cart") }, "Edit")),
+        el("ul", { class: "recap-items" }, lines.map((c) => el("li", {}, el("img", { src: c.p.image, alt: "", width: "44", height: "55" }), el("span", { text: `${c.p.title} × ${c.qty}` }), el("b", { text: money(c.p.price * c.qty) }))))),
+      totalsBlock(true), box, note,
+      el("p", { class: "fine center", text: "You'll pay securely with PayPal or any debit or credit card. Your card details never touch this site." }));
 
     loadPayPal().then((paypal) => {
       box.replaceChildren();
@@ -248,48 +488,89 @@
         style: { layout: "vertical", shape: "pill", color: "gold", label: "pay", height: 48 },
         createOrder: async () => {
           note.textContent = ""; note.className = "checkout-msg";
-          try { return (await postJson(api("/api/orders"), { itemId: p.id, quantity: state.qty })).id; }
-          catch (e) { note.textContent = e.message; note.className = "checkout-msg error"; throw e; }
+          try {
+            return (await postJson(api("/api/orders"), { items: cartLines().map((c) => ({ id: c.id, qty: c.qty })), delivery: deliveryPayload() })).id;
+          } catch (e) {
+            note.textContent = e.message; note.className = "checkout-msg error";
+            throw e;
+          }
         },
         onApprove: async (data, actions) => {
           note.textContent = "Confirming your payment…"; note.className = "checkout-msg";
+          box.classList.add("busy");
           try {
             const r = await postJson(api(`/api/orders/${data.orderID}/capture`));
-            celebrate(p, r);
+            orderDone(r);
           } catch (e) {
+            box.classList.remove("busy");
             if (e.data && e.data.restart) { note.textContent = e.message; note.className = "checkout-msg error"; return actions.restart(); }
             note.textContent = e.message; note.className = "checkout-msg error";
           }
         },
-        onCancel: () => { note.textContent = "Checkout cancelled. Nothing was charged."; note.className = "checkout-msg"; },
+        onCancel: () => { note.textContent = "Payment cancelled. Nothing was charged."; note.className = "checkout-msg"; },
         onError: () => { if (!note.textContent) { note.textContent = "PayPal hit a problem. Please try again in a moment."; note.className = "checkout-msg error"; } },
       }).render(box);
     }).catch(() => {
       box.replaceChildren();
-      const fallback = paypalUrl(p);
       note.className = "checkout-msg error";
-      note.textContent = "Checkout couldn't load. Check your connection and reopen this piece" + (igHandle() ? `, or message @${igHandle()} to buy it.` : ".");
-      if (fallback) box.append(iconLink("btn paypal", fallback, PP_ICON, `Pay with PayPal · ${money(p.price)}`));
+      note.textContent = "Payment couldn't load. Check your connection and try again" + (igHandle() ? `, or message @${igHandle()} to order.` : ".");
     });
     return wrap;
   }
 
-  function celebrate(p, result) {
-    const idx = state.paintings.indexOf(p);
-    const left = typeof result.stockLeft === "number" ? result.stockLeft : Math.max(0, stockOf(p) - (result.quantity || 1));
-    state.paintings[idx] = { ...p, quantity: left, status: left > 0 ? "available" : "sold" };
+  function orderDone(r) {
+    // Show the new stock straight away; the site itself refreshes about a minute later.
+    (r.stock || []).forEach((s) => {
+      const i = state.paintings.findIndex((p) => p.id === s.id);
+      if (i >= 0 && typeof s.left === "number") state.paintings[i] = { ...state.paintings[i], quantity: s.left, status: s.left > 0 ? "available" : "sold" };
+    });
+    const first = (buyer.name.trim().split(/\s+/)[0]) || "";
+    const pickup = buyer.method === "pickup";
+    cart = []; saveCart();
     renderFilters(); renderWall();
-    const thanks = el("div", { class: "thanks" },
+    cartStep = "done";
+    $("#cart-title").textContent = "Order placed";
+    $("#cart-back").hidden = true;
+    $("#cart-steps").hidden = true;
+    $("#cart-body").replaceChildren(el("div", { class: "thanks done" },
       el("div", { class: "tick", "aria-hidden": "true" }),
-      el("h3", { text: "Thank you!" }),
-      el("p", { text: `Your payment for “${result.title || p.title}” went through. Sruthi has been notified and will ship it to the address on your PayPal account.` }),
-      igHandle() ? el("p", {}, "Questions? Message ", el("a", { href: igUrl(), target: "_blank", rel: "noopener" }, `@${igHandle()}`), ".") : null,
-      el("button", { type: "button", class: "btn ghost", onclick: () => closeViewer() }, "Keep browsing"));
-    $("#viewer-actions").replaceChildren(thanks);
-    thanks.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
-    $("#viewer-stock").textContent = stockLabel(state.paintings[idx]);
-    $("#viewer-stock").className = `stock ${stockClass(state.paintings[idx])}`;
+      el("h3", { text: first ? `Thank you, ${first}!` : "Thank you!" }),
+      el("p", { class: "order-no" }, "Order ", el("b", { text: r.number || "" })),
+      el("ul", { class: "recap-items plain" }, (r.items || []).map((i) => el("li", { text: `${i.title} × ${i.qty}` }))),
+      el("p", { text: `Paid ${money(Number(r.total))} ${r.currency || ""}. PayPal is emailing your receipt to ${buyer.email.trim()}.` }),
+      el("p", { text: pickup ? "Sruthi has your order and will message you to arrange the pickup." : "Sruthi has your order and will ship it to the address you gave. Keep your order number handy if you have questions." }),
+      igHandle() ? el("p", {}, "Questions? Message ", el("a", { href: igUrl(), target: "_blank", rel: "noopener" }, `@${igHandle()}`), ` with order ${r.number || ""}.`) : null,
+      el("button", { type: "button", class: "btn ghost", onclick: () => closeCart() }, "Keep browsing")));
     petals();
+  }
+
+  // Viewer buttons when the cart is on: quantity, Add to cart, Buy now.
+  function cartBlock(p) {
+    const left = Math.min(stockOf(p), 20);
+    const inCart = () => (cart.find((c) => c.id === p.id) || {}).qty || 0;
+    let qty = 1;
+    const msg = el("p", { class: "checkout-msg", role: "status" });
+    const addBtn = el("button", { type: "button", class: "btn add-cart" });
+    const refresh = () => {
+      const room = left - inCart();
+      addBtn.disabled = room < 1;
+      addBtn.textContent = room < 1 ? (inCart() ? "All available are in your cart" : "Sold out") : `Add to cart · ${money(p.price * Math.min(qty, room))}`;
+    };
+    addBtn.addEventListener("click", () => {
+      const added = addToCart(p, qty);
+      if (added > 0) {
+        addBtn.classList.remove("added"); void addBtn.offsetWidth; addBtn.classList.add("added");
+        msg.className = "checkout-msg ok";
+        msg.replaceChildren(`Added ${added} to your cart. `, el("button", { type: "button", class: "link", onclick: () => openCart() }, "View cart"));
+      }
+      refresh();
+    });
+    const qtyRow = left > 1 ? el("div", { class: "qty" }, el("span", { text: "Quantity" }), stepper(1, 1, left, (v) => { qty = v; refresh(); }, p.title)) : null;
+    refresh();
+    return el("div", { class: "checkout" }, qtyRow,
+      el("div", { class: "cart-actions" }, addBtn,
+        el("button", { type: "button", class: "btn ghost", onclick: () => { if (inCart() < Math.min(qty, left)) addToCart(p, Math.min(qty, left) - inCart()); openCart("details"); } }, "Buy now")),
+      msg);
   }
 
   // A short burst of petals — the one celebratory moment on the site.
@@ -355,8 +636,8 @@
 
     const actions = [];
     if (!isSold(p)) {
-      if (checkoutOn()) {
-        actions.push(checkoutBlock(p));
+      if (cartOn()) {
+        actions.push(cartBlock(p));
         if (igHandle()) actions.push(iconLink("btn ghost small", igUrl(), IG_ICON, "Ask a question on Instagram"));
       } else if (paypalUrl(p)) {
         actions.push(iconLink("btn paypal", paypalUrl(p), PP_ICON, `Buy with PayPal · ${money(p.price)}`));
@@ -494,7 +775,7 @@
       state.pages = data.pages || null;
       const fmt = new Intl.NumberFormat("en-CA", { style: "currency", currency: state.artist.currency || "CAD", maximumFractionDigits: 2, minimumFractionDigits: 0 });
       money = (n) => fmt.format(n);
-      applyInstagram(); renderPages(); renderHero(); renderFilters(); renderWall(); renderContact(); openFromHash();
+      applyInstagram(); renderPages(); renderHero(); renderFilters(); renderWall(); renderContact(); reconcileCart(); updateCartBadge(); openFromHash();
     })
     .catch(() => {
       $("#wall").replaceChildren(el("li", { class: "note", text: "The shop couldn’t load. Refresh the page to try again." }));
