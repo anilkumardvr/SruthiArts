@@ -3,10 +3,11 @@
 // What it does
 //   POST /api/orders                 Cart checkout: check stock and real prices in the repo, add the delivery fee
 //                                    (content/settings.json → shipping), then create a PayPal order.
+//   POST /api/requests               PayPal.me mode: save the order + address, reserve the pieces, return the pay link.
 //   POST /api/orders/:id/capture     Take the payment, lower each item's quantity in the repo (Sold at 0),
 //                                    save the order with the delivery address, and send Sruthi a WhatsApp alert.
 //   GET  /api/admin/orders           Orders list for the admin (GitHub login required).
-//   PATCH /api/admin/orders/:key     Update an order: status (new/packed/shipped/cancelled), tracking, note.
+//   PATCH /api/admin/orders/:key     Update an order: status (awaiting/new/packed/shipped/cancelled), tracking, note.
 //   GET  /auth, /callback            "Continue with GitHub" login for the admin (Decap/Sveltia-compatible).
 //   GET  /                           Health check: shows which features are configured.
 //
@@ -88,12 +89,19 @@ async function loadItem(env, id) {
 }
 
 // Lower the stock with optimistic locking (the file's sha). Retries if someone edited it at the same moment.
-async function decrementStock(env, id, qty, orderId) {
+async function decrementStock(env, id, qty, orderId, label = "PayPal") {
+  return changeStock(env, id, -qty, (t, left) => `Sale: ${t} ×${qty} (${label} ${orderId}) — ${left} left`);
+}
+// Put pieces back when an unpaid order is cancelled.
+async function restock(env, id, qty, number) {
+  return changeStock(env, id, qty, (t, left) => `Cancelled ${number}: ${t} back in stock (${left} available)`);
+}
+async function changeStock(env, id, delta, message) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const { sha, data } = await loadItem(env, id);
-    const left = Math.max(0, stockOf(data) - qty);
+    const left = Math.max(0, stockOf(data) + delta);
     const next = { ...data, quantity: left, status: left > 0 ? "available" : "sold" };
-    const res = await writeRepoJson(env, itemFile(id), next, sha, `Sale: ${data.title} ×${qty} (PayPal ${orderId}) — ${left} left`);
+    const res = await writeRepoJson(env, itemFile(id), next, sha, message(data.title, left));
     if (res.ok) return { ok: true, left, title: data.title };
     if (res.status !== 409 && res.status !== 422) return { ok: false, error: `GitHub write failed (${res.status})` };
     await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
@@ -157,8 +165,8 @@ function readDelivery(raw, ship) {
 const feeFor = (delivery, ship) => (delivery.method === "pickup" ? 0 : delivery.address.country === "CA" ? ship.CA : delivery.address.country === "US" ? ship.US : ship.intl);
 const addressText = (d) => (d.method === "pickup" ? "Pickup" : [d.address.line1, d.address.line2, d.address.city, d.address.region, d.address.postal, d.address.country].filter(Boolean).join(", "));
 
-async function createOrder(env, request) {
-  const body = await request.json().catch(() => ({}));
+// Checks the cart against the repo (stock, real prices) and works out the delivery fee.
+async function prepareCart(env, body) {
   // Older pages send one item as { itemId, quantity }.
   const rawItems = Array.isArray(body.items) ? body.items : body.itemId ? [{ id: body.itemId, qty: body.quantity || 1 }] : [];
   const wanted = new Map();
@@ -191,6 +199,12 @@ async function createOrder(env, request) {
   const subtotal = Number(money(lines.reduce((t, l) => t + l.price * l.qty, 0)));
   const shipping = delivery ? Number(money(feeFor(delivery, ship))) : 0;
   const total = money(subtotal + shipping);
+  return { lines, delivery, subtotal, shipping, total, currency, settings };
+}
+
+async function createOrder(env, request) {
+  const body = await request.json().catch(() => ({}));
+  const { lines, delivery, subtotal, shipping, total, currency } = await prepareCart(env, body);
 
   const unit = {
     reference_id: "cart",
@@ -221,6 +235,49 @@ async function createOrder(env, request) {
   // Keep the cart and delivery details privately until the payment is captured (3 hours).
   if (env.ORDERS) await env.ORDERS.put(`pending:${res.data.id}`, JSON.stringify({ lines, delivery, subtotal, shipping, currency }), { expirationTtl: 3 * 3600 });
   return json({ id: res.data.id, subtotal, shipping, total: Number(total), currency });
+}
+
+// ---------- PayPal.me orders (no PayPal Business account needed) ----------
+// The customer places the order with their address, the pieces are reserved, and they pay the total on
+// Sruthi's PayPal.me link. Sruthi marks it Paid in the studio once the money arrives (or Cancelled, which restocks).
+const paypalMeUser = (v) => String(v || "").trim().replace(/^https?:\/\/(www\.)?paypal\.me\//i, "").replace(/^paypal\.me\//i, "").replace(/^@/, "").replace(/[/?#].*$/, "");
+
+async function rateLimited(env, request) {
+  if (!env.ORDERS) return false;
+  const ip = request.headers.get("cf-connecting-ip") || "local";
+  const key = `rl:${ip}:${new Date().toISOString().slice(0, 13)}`;
+  const n = Number((await env.ORDERS.get(key)) || 0);
+  if (n >= 6) return true;
+  await env.ORDERS.put(key, String(n + 1), { expirationTtl: 3700 });
+  return false;
+}
+
+async function placeRequest(env, request, ctx) {
+  if (!env.ORDERS) throw new HttpError(503, "Orders can't be saved right now. Please message Sruthi on Instagram.", "no_storage");
+  if (await rateLimited(env, request)) throw new HttpError(429, "Too many orders from this connection. Please try again later or message Sruthi.", "rate");
+  const body = await request.json().catch(() => ({}));
+  if (!Array.isArray(body.items)) throw new HttpError(400, "Your cart is empty.", "empty");
+  const { lines, delivery, subtotal, shipping, total, currency, settings } = await prepareCart(env, body);
+  const user = paypalMeUser(settings.paypal);
+  if (!user) throw new HttpError(503, "Online payment isn't set up yet. Please message Sruthi on Instagram.", "no_paypal");
+  const now = Date.now();
+  const number = orderNumber();
+  // Reserve the pieces so nobody else buys them while this customer pays.
+  const stock = [];
+  for (const l of lines) {
+    const r = await decrementStock(env, l.id, l.qty, number, "Order").catch((e) => ({ ok: false, error: e.message }));
+    if (r.title) l.title = r.title;
+    stock.push({ id: l.id, left: r.ok ? r.left : null, error: r.ok ? "" : r.error });
+  }
+  const order = {
+    number, orderId: number, payment: "paypalme", items: lines, subtotal, shipping, amount: total, currency, delivery,
+    addressText: addressText(delivery), buyer: { name: delivery.name, email: delivery.email }, stock,
+    stockTaken: stock.every((x) => x.left !== null), status: "awaiting", tracking: "", createdAt: new Date(now).toISOString(),
+  };
+  const key = `order:${String(9999999999999 - now).padStart(13, "0")}:${number.replace(/[^A-Z0-9]/g, "")}`;
+  await env.ORDERS.put(key, JSON.stringify(order));
+  ctx.waitUntil(notifyWhatsApp(env, order).catch((e) => console.log("whatsapp failed", e.message)));
+  return json({ ok: true, number, total: Number(total), currency, payUrl: `https://www.paypal.me/${encodeURIComponent(user)}/${total}${currency}`, items: lines.map((l) => ({ id: l.id, title: l.title, qty: l.qty })), method: delivery.method, stock });
 }
 
 // Short, readable order number, e.g. SA-K3F9QZ2B (time-based plus two random characters so it never repeats).
@@ -294,7 +351,9 @@ async function notifyWhatsApp(env, o) {
   if (env.CALLMEBOT_PHONE && env.CALLMEBOT_APIKEY) {
     const text = [
       `New order ${o.number}: ${what}`,
-      `Paid: ${o.amount} ${o.currency}${o.shipping ? ` (incl. ${o.shipping} delivery)` : ""}`,
+      o.status === "awaiting"
+        ? `To pay by PayPal.me: ${o.amount} ${o.currency}${o.shipping ? ` (incl. ${o.shipping} delivery)` : ""} — check PayPal, then mark Paid in the studio`
+        : `Paid: ${o.amount} ${o.currency}${o.shipping ? ` (incl. ${o.shipping} delivery)` : ""}`,
       `Customer: ${line(d.name)} · ${line(d.email)}${d.phone ? ` · ${d.phone}` : ""}`,
       d.method === "pickup" ? `Pickup: ${where}` : `Ship to: ${line(d.name)}, ${line(where)}`,
       d.note ? `Note: ${line(d.note)}` : "",
@@ -330,7 +389,7 @@ async function requireAdmin(env, request) {
   const body = res.ok ? await res.json() : {};
   if (!body.permissions || !body.permissions.push) throw new HttpError(403, "This GitHub account can't manage the shop.", "forbidden");
 }
-const STATUSES = ["new", "packed", "shipped", "cancelled"];
+const STATUSES = ["awaiting", "new", "packed", "shipped", "cancelled"];
 async function listOrders(env) {
   if (!env.ORDERS) return json({ orders: [], note: "Orders storage (KV) is not connected yet." });
   const keys = [];
@@ -351,7 +410,15 @@ async function updateOrder(env, request, key) {
   }
   if (body.tracking !== undefined) patch.tracking = clean(body.tracking, 200);
   if (body.adminNote !== undefined) patch.adminNote = clean(body.adminNote, 500);
-  const order = { ...JSON.parse(current), ...patch, updatedAt: new Date().toISOString() };
+  let order = { ...JSON.parse(current), ...patch, updatedAt: new Date().toISOString() };
+  // Cancelling an order puts its reserved pieces back; restoring it reserves them again.
+  if (patch.status === "cancelled" && order.stockTaken) {
+    for (const l of order.items || []) await restock(env, l.id, Number(l.qty) || 1, order.number).catch((e) => console.log("restock failed", e.message));
+    order.stockTaken = false;
+  } else if (patch.status && patch.status !== "cancelled" && JSON.parse(current).status === "cancelled" && !order.stockTaken) {
+    for (const l of order.items || []) await decrementStock(env, l.id, Number(l.qty) || 1, order.number, "Restored").catch((e) => console.log("re-reserve failed", e.message));
+    order.stockTaken = true;
+  }
   await env.ORDERS.put(key, JSON.stringify(order));
   return json({ key, ...order });
 }
@@ -406,11 +473,14 @@ export default {
       const m = url.pathname.match(/^\/api\/orders\/([A-Z0-9]+)\/capture$/);
       const a = decodeURIComponent(url.pathname).match(/^\/api\/admin\/orders\/(order:[0-9]+:[A-Z0-9]+)$/);
       if (url.pathname === "/" && request.method === "GET") {
-        res = json({ ok: true, checkout: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET && env.GITHUB_TOKEN), paypalEnv: env.PAYPAL_ENV || "sandbox", orders: Boolean(env.ORDERS), whatsapp: Boolean((env.CALLMEBOT_PHONE && env.CALLMEBOT_APIKEY) || (env.WHATSAPP_TOKEN && env.WHATSAPP_TO)), login: Boolean(env.GITHUB_OAUTH_CLIENT_ID) });
+        res = json({ ok: true, checkout: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET && env.GITHUB_TOKEN), paypalme: Boolean(env.GITHUB_TOKEN && env.ORDERS), paypalEnv: env.PAYPAL_ENV || "sandbox", orders: Boolean(env.ORDERS), whatsapp: Boolean((env.CALLMEBOT_PHONE && env.CALLMEBOT_APIKEY) || (env.WHATSAPP_TOKEN && env.WHATSAPP_TO)), login: Boolean(env.GITHUB_OAUTH_CLIENT_ID) });
       } else if (url.pathname === "/auth" && request.method === "GET") {
         return oauthStart(env, request);
       } else if (url.pathname === "/callback" && request.method === "GET") {
         return oauthCallback(env, request);
+      } else if (url.pathname === "/api/requests" && request.method === "POST") {
+        if (!allowedOrigin(env, request)) throw new HttpError(403, "Not allowed.", "origin");
+        res = await placeRequest(env, request, ctx);
       } else if (url.pathname === "/api/orders" && request.method === "POST") {
         if (!allowedOrigin(env, request)) throw new HttpError(403, "Not allowed.", "origin");
         res = await createOrder(env, request);
