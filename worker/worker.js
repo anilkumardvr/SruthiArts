@@ -1,16 +1,17 @@
 // Sruthi Arts checkout server — a single-file Cloudflare Worker (no dependencies).
 //
 // What it does
-//   POST /api/orders                 Check stock and the real price in the repo, then create a PayPal order.
-//   POST /api/orders/:id/capture     Take the payment, lower the item's quantity in the repo (Sold at 0),
-//                                    save the order, and send Sruthi a WhatsApp alert.
+//   POST /api/orders                 Cart checkout: check stock and real prices in the repo, add the delivery fee
+//                                    (content/settings.json → shipping), then create a PayPal order.
+//   POST /api/orders/:id/capture     Take the payment, lower each item's quantity in the repo (Sold at 0),
+//                                    save the order with the delivery address, and send Sruthi a WhatsApp alert.
 //   GET  /api/admin/orders           Orders list for the admin (GitHub login required).
-//   PATCH /api/admin/orders/:key     Mark an order shipped / new.
+//   PATCH /api/admin/orders/:key     Update an order: status (new/packed/shipped/cancelled), tracking, note.
 //   GET  /auth, /callback            "Continue with GitHub" login for the admin (Decap/Sveltia-compatible).
 //   GET  /                           Health check: shows which features are configured.
 //
 // Settings (Cloudflare → Worker → Settings → Variables and Secrets). Secrets are marked (secret).
-//   ALLOWED_ORIGINS            https://anilkumardvr.github.io            (comma-separated)
+//   ALLOWED_ORIGINS            https://www.sruthiarts.com,https://sruthiarts.com   (comma-separated)
 //   GITHUB_REPO                anilkumardvr/SruthiArts
 //   GITHUB_BRANCH              main
 //   GITHUB_TOKEN (secret)      fine-grained token: this repo only, Contents read/write — used to update stock
@@ -123,38 +124,107 @@ async function paypal(env, path, body) {
 }
 const money = (n) => (Math.round(Number(n) * 100) / 100).toFixed(2);
 
-async function createOrder(env, request) {
-  const { itemId, quantity = 1 } = await request.json().catch(() => ({}));
-  const qty = Math.floor(Number(quantity));
-  if (!Number.isInteger(qty) || qty < 1 || qty > 20) throw new HttpError(400, "Choose a quantity between 1 and 20.", "bad_qty");
-  const [{ data: item }, settings] = await Promise.all([loadItem(env, itemId), readRepoJson(env, "content/settings.json")]);
-  const left = stockOf(item);
-  if (left < 1) throw new HttpError(409, "Sorry — this piece has just sold out.", "sold_out");
-  if (qty > left) throw new HttpError(409, `Only ${left} left. Please lower the quantity.`, "not_enough");
-  const price = Number(item.price);
-  if (!(price > 0)) throw new HttpError(400, "This item has no price yet.", "no_price");
-  const currency = (settings && settings.data.currency) || "CAD";
-  const total = money(price * qty);
+// ---------- Cart checkout ----------
+// Delivery fees live in content/settings.json ("shipping"), so the server, not the browser, decides what's charged.
+const shippingOf = (settings) => {
+  const s = (settings && settings.shipping) || {};
+  const fee = (v, d) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : d);
+  return { CA: fee(s.CA, 15), US: fee(s.US, 25), intl: fee(s.intl, 40), pickup: s.pickup !== false, pickupNote: s.pickupNote || "" };
+};
+const clean = (v, max = 120) => String(v == null ? "" : v).replace(/[\u0000-\u001f<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 
+function readDelivery(raw, ship) {
+  const d = raw || {};
+  const method = d.method === "pickup" ? "pickup" : "ship";
+  const out = { method, name: clean(d.name, 80), email: clean(d.email, 120).toLowerCase(), phone: clean(d.phone, 30), note: clean(d.note, 300) };
+  if (out.name.length < 2) throw new HttpError(400, "Please enter your full name.", "bad_name");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(out.email)) throw new HttpError(400, "Please enter a valid email address.", "bad_email");
+  if (method === "pickup") {
+    if (!ship.pickup) throw new HttpError(400, "Pickup isn't available right now. Please choose delivery.", "no_pickup");
+    if (!out.phone) throw new HttpError(400, "Please add a phone number so Sruthi can arrange the pickup.", "bad_phone");
+    return out;
+  }
+  const a = d.address || {};
+  const country = clean(a.country, 2).toUpperCase();
+  out.address = { line1: clean(a.line1, 300), line2: clean(a.line2, 300), city: clean(a.city, 120), region: clean(a.region, 300), postal: clean(a.postal, 60).toUpperCase(), country };
+  if (!/^[A-Z]{2}$/.test(country)) throw new HttpError(400, "Please choose your country.", "bad_country");
+  if (!out.address.line1 || !out.address.city) throw new HttpError(400, "Please enter your street address and city.", "bad_address");
+  if (country === "CA" && !/^[A-Z]\d[A-Z] ?\d[A-Z]\d$/.test(out.address.postal)) throw new HttpError(400, "Please enter a valid Canadian postal code, like M5V 2T6.", "bad_postal");
+  if (country === "US" && !/^\d{5}(-\d{4})?$/.test(out.address.postal)) throw new HttpError(400, "Please enter a valid ZIP code.", "bad_postal");
+  if ((country === "CA" || country === "US") && !/^[A-Z]{2}$/.test(out.address.region)) throw new HttpError(400, country === "CA" ? "Please choose your province." : "Please choose your state.", "bad_region");
+  return out;
+}
+const feeFor = (delivery, ship) => (delivery.method === "pickup" ? 0 : delivery.address.country === "CA" ? ship.CA : delivery.address.country === "US" ? ship.US : ship.intl);
+const addressText = (d) => (d.method === "pickup" ? "Pickup" : [d.address.line1, d.address.line2, d.address.city, d.address.region, d.address.postal, d.address.country].filter(Boolean).join(", "));
+
+async function createOrder(env, request) {
+  const body = await request.json().catch(() => ({}));
+  // Older pages send one item as { itemId, quantity }.
+  const rawItems = Array.isArray(body.items) ? body.items : body.itemId ? [{ id: body.itemId, qty: body.quantity || 1 }] : [];
+  const wanted = new Map();
+  for (const it of rawItems) {
+    const qty = Math.floor(Number(it && it.qty));
+    if (!Number.isInteger(qty) || qty < 1 || qty > 20) throw new HttpError(400, "Choose a quantity between 1 and 20.", "bad_qty");
+    itemFile(it.id);
+    wanted.set(it.id, (wanted.get(it.id) || 0) + qty);
+  }
+  if (!wanted.size) throw new HttpError(400, "Your cart is empty.", "empty");
+  if (wanted.size > 20) throw new HttpError(400, "Please order at most 20 different pieces at a time.", "too_many");
+
+  const settingsFile = await readRepoJson(env, "content/settings.json");
+  const settings = (settingsFile && settingsFile.data) || {};
+  const ship = shippingOf(settings);
+  const delivery = body.delivery ? readDelivery(body.delivery, ship) : null;
+  if (!delivery && Array.isArray(body.items)) throw new HttpError(400, "Please add your delivery details.", "no_delivery");
+  const currency = settings.currency || "CAD";
+
+  const lines = [];
+  for (const [id, qty] of wanted) {
+    const { data: item } = await loadItem(env, id);
+    const left = stockOf(item);
+    if (left < 1) throw new HttpError(409, `Sorry, “${item.title}” has just sold out. Please remove it from your cart.`, "sold_out");
+    if (qty > left) throw new HttpError(409, `Only ${left} of “${item.title}” left. Please lower the quantity.`, "not_enough");
+    const price = Number(item.price);
+    if (!(price > 0)) throw new HttpError(400, `“${item.title}” has no price yet.`, "no_price");
+    lines.push({ id, title: String(item.title).slice(0, 120), qty, price: Number(money(price)), image: item.image || "" });
+  }
+  const subtotal = Number(money(lines.reduce((t, l) => t + l.price * l.qty, 0)));
+  const shipping = delivery ? Number(money(feeFor(delivery, ship))) : 0;
+  const total = money(subtotal + shipping);
+
+  const unit = {
+    reference_id: "cart",
+    custom_id: lines.length === 1 ? `${lines[0].id}|${lines[0].qty}` : "cart",
+    description: (lines.length === 1 ? lines[0].title : `${lines.length} pieces from Sruthi Arts`).slice(0, 127),
+    amount: { currency_code: currency, value: total, breakdown: { item_total: { currency_code: currency, value: money(subtotal) }, shipping: { currency_code: currency, value: money(shipping) } } },
+    items: lines.map((l) => ({ name: l.title, sku: l.id.slice(0, 127), quantity: String(l.qty), unit_amount: { currency_code: currency, value: money(l.price) }, category: "PHYSICAL_GOODS" })),
+  };
+  if (delivery && delivery.method === "ship") {
+    const a = delivery.address;
+    unit.shipping = { type: "SHIPPING", name: { full_name: delivery.name.slice(0, 300) }, address: { address_line_1: a.line1, ...(a.line2 ? { address_line_2: a.line2 } : {}), admin_area_2: a.city, ...(a.region ? { admin_area_1: a.region } : {}), ...(a.postal ? { postal_code: a.postal } : {}), country_code: a.country } };
+  }
   const res = await paypal(env, "/v2/checkout/orders", {
     intent: "CAPTURE",
-    purchase_units: [{
-      reference_id: itemId,
-      custom_id: `${itemId}|${qty}`,
-      description: String(item.title).slice(0, 120),
-      amount: { currency_code: currency, value: total, breakdown: { item_total: { currency_code: currency, value: total } } },
-      items: [{ name: String(item.title).slice(0, 120), quantity: String(qty), unit_amount: { currency_code: currency, value: money(price) }, category: "PHYSICAL_GOODS" }],
-    }],
-    application_context: { brand_name: ((settings && settings.data.name) || "Sruthi") + " Arts", shipping_preference: "GET_FROM_FILE", user_action: "PAY_NOW" },
+    purchase_units: [unit],
+    application_context: {
+      brand_name: "Sruthi Arts",
+      shipping_preference: !delivery ? "GET_FROM_FILE" : delivery.method === "ship" ? "SET_PROVIDED_ADDRESS" : "NO_SHIPPING",
+      user_action: "PAY_NOW",
+    },
   });
-  if (!res.ok) throw new HttpError(502, "PayPal couldn't start the checkout. Please try again.", "paypal_create");
-  return json({ id: res.data.id });
+  if (!res.ok) {
+    const issue = res.data && res.data.details && res.data.details[0] && res.data.details[0].issue;
+    console.log("paypal create failed", res.status, JSON.stringify(res.data).slice(0, 800));
+    if (/ADDRESS|POSTAL|COUNTRY|STATE|CITY/i.test(issue || "")) throw new HttpError(400, "PayPal couldn't accept this address. Please check the postal code, province/state and country.", "paypal_address");
+    throw new HttpError(502, "PayPal couldn't start the checkout. Please try again.", "paypal_create");
+  }
+  // Keep the cart and delivery details privately until the payment is captured (3 hours).
+  if (env.ORDERS) await env.ORDERS.put(`pending:${res.data.id}`, JSON.stringify({ lines, delivery, subtotal, shipping, currency }), { expirationTtl: 3 * 3600 });
+  return json({ id: res.data.id, subtotal, shipping, total: Number(total), currency });
 }
 
-function describeAddress(shipping) {
-  const a = (shipping && shipping.address) || {};
-  return [a.address_line_1, a.address_line_2, a.admin_area_2, a.admin_area_1, a.postal_code, a.country_code].filter(Boolean).join(", ");
-}
+// Short, readable order number, e.g. SA-K3F9QZ2B (time-based plus two random characters so it never repeats).
+const orderNumber = () => `SA-${Date.now().toString(36).toUpperCase().slice(-6)}${Array.from(crypto.getRandomValues(new Uint8Array(2)), (b) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("")}`;
 
 async function captureOrder(env, orderId, ctx) {
   if (!/^[A-Z0-9]{5,40}$/.test(orderId)) throw new HttpError(400, "Unknown order.", "bad_order");
@@ -165,46 +235,71 @@ async function captureOrder(env, orderId, ctx) {
 
   const pu = res.data.purchase_units[0];
   const capture = pu.payments.captures[0];
-  const [itemId, qtyStr] = String(capture.custom_id || pu.custom_id || pu.reference_id || "").split("|");
-  const qty = Math.max(1, Number(qtyStr) || 1);
-  const stock = await decrementStock(env, itemId, qty, orderId).catch((e) => ({ ok: false, error: e.message }));
+  const pending = env.ORDERS ? JSON.parse((await env.ORDERS.get(`pending:${orderId}`)) || "null") : null;
+  let lines = pending && pending.lines;
+  if (!lines) {
+    // No saved cart (older single-item page): read it from PayPal's record.
+    const [itemId, qtyStr] = String(capture.custom_id || pu.custom_id || "").split("|");
+    lines = itemId && itemId !== "cart" ? [{ id: itemId, title: itemId, qty: Math.max(1, Number(qtyStr) || 1), price: 0, image: "" }] : [];
+  }
+  const stock = [];
+  for (const l of lines) {
+    const r = await decrementStock(env, l.id, l.qty, orderId).catch((e) => ({ ok: false, error: e.message }));
+    if (r.title) l.title = r.title;
+    stock.push({ id: l.id, left: r.ok ? r.left : null, error: r.ok ? "" : r.error });
+  }
 
   const payer = res.data.payer || {};
-  const shipping = pu.shipping || {};
+  const ppShip = pu.shipping || {};
+  const delivery = (pending && pending.delivery) || {
+    method: "ship", name: (ppShip.name && ppShip.name.full_name) || "", email: payer.email_address || "", phone: "", note: "",
+    address: { line1: (ppShip.address || {}).address_line_1 || "", line2: (ppShip.address || {}).address_line_2 || "", city: (ppShip.address || {}).admin_area_2 || "", region: (ppShip.address || {}).admin_area_1 || "", postal: (ppShip.address || {}).postal_code || "", country: (ppShip.address || {}).country_code || "" },
+  };
+  const now = Date.now();
   const order = {
+    number: orderNumber(),
     orderId,
     captureId: capture.id,
-    itemId,
-    title: stock.title || itemId,
-    quantity: qty,
+    items: lines,
+    subtotal: pending ? pending.subtotal : Number(capture.amount.value),
+    shipping: pending ? pending.shipping : 0,
     amount: capture.amount.value,
     currency: capture.amount.currency_code,
+    delivery,
+    addressText: addressText(delivery),
     buyer: { name: [payer.name && payer.name.given_name, payer.name && payer.name.surname].filter(Boolean).join(" "), email: payer.email_address || "" },
-    shipTo: { name: (shipping.name && shipping.name.full_name) || "", address: describeAddress(shipping) },
-    stockLeft: stock.ok ? stock.left : null,
-    stockError: stock.ok ? "" : stock.error,
+    stock,
     status: "new",
-    createdAt: new Date().toISOString(),
+    tracking: "",
+    createdAt: new Date(now).toISOString(),
   };
-  const key = `order:${String(9999999999999 - Date.now()).padStart(13, "0")}:${orderId}`;
-  if (env.ORDERS) ctx.waitUntil(env.ORDERS.put(key, JSON.stringify(order)));
+  const key = `order:${String(9999999999999 - now).padStart(13, "0")}:${orderId}`;
+  if (env.ORDERS) {
+    await env.ORDERS.put(key, JSON.stringify(order));
+    ctx.waitUntil(env.ORDERS.delete(`pending:${orderId}`));
+  }
   ctx.waitUntil(notifyWhatsApp(env, order).catch((e) => console.log("whatsapp failed", e.message)));
-  return json({ ok: true, orderId, title: order.title, quantity: qty, stockLeft: order.stockLeft, buyerName: order.buyer.name });
+  return json({ ok: true, orderId, number: order.number, items: lines.map((l) => ({ id: l.id, title: l.title, qty: l.qty })), total: order.amount, currency: order.currency, method: delivery.method, buyerName: delivery.name || order.buyer.name, stock });
 }
 
 // ---------- WhatsApp ----------
 async function notifyWhatsApp(env, o) {
   const line = (s) => String(s || "—").replace(/\s+/g, " ").trim();
-  const stockNote = o.stockLeft === null ? `Stock NOT updated (${o.stockError}) — update it in the admin.` : o.stockLeft === 0 ? "Now marked Sold." : `${o.stockLeft} left.`;
+  const what = o.items.map((l) => `${l.title} x${l.qty}`).join(", ");
+  const d = o.delivery;
+  const where = d.method === "pickup" ? "Customer will pick up (message them to arrange)" : o.addressText;
+  const stockNote = o.stock.some((s) => s.left === null)
+    ? "Stock NOT updated for some items — check the studio."
+    : o.stock.filter((s) => s.left === 0).length ? `Now sold out: ${o.stock.filter((s) => s.left === 0).map((s) => (o.items.find((l) => l.id === s.id) || {}).title || s.id).join(", ")}` : "Stock updated.";
   if (env.CALLMEBOT_PHONE && env.CALLMEBOT_APIKEY) {
     const text = [
-      `New order: ${o.title} x${o.quantity}`,
-      `Paid: ${o.amount} ${o.currency}`,
-      `Buyer: ${line(o.buyer.name)} (${line(o.buyer.email)})`,
-      `Ship to: ${line(o.shipTo.name)}, ${line(o.shipTo.address)}`,
+      `New order ${o.number}: ${what}`,
+      `Paid: ${o.amount} ${o.currency}${o.shipping ? ` (incl. ${o.shipping} delivery)` : ""}`,
+      `Customer: ${line(d.name)} · ${line(d.email)}${d.phone ? ` · ${d.phone}` : ""}`,
+      d.method === "pickup" ? `Pickup: ${where}` : `Ship to: ${line(d.name)}, ${line(where)}`,
+      d.note ? `Note: ${line(d.note)}` : "",
       stockNote,
-      `PayPal order ${o.orderId}`,
-    ].join("\n");
+    ].filter(Boolean).join("\n");
     const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(env.CALLMEBOT_PHONE)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(env.CALLMEBOT_APIKEY)}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`CallMeBot ${res.status}`);
@@ -212,7 +307,7 @@ async function notifyWhatsApp(env, o) {
   }
   if (env.WHATSAPP_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_TO) {
     // Template body must have 4 variables, e.g. "New order: {{1}} for {{2}}. Buyer: {{3}}. Ship to: {{4}}."
-    const params = [`${o.title} x${o.quantity}`, `${o.amount} ${o.currency}`, `${line(o.buyer.name)} ${line(o.buyer.email)}`, `${line(o.shipTo.name)}, ${line(o.shipTo.address)}. ${stockNote}`];
+    const params = [`${o.number} ${what}`, `${o.amount} ${o.currency}`, `${line(d.name)} ${line(d.email)} ${d.phone || ""}`, `${line(where)}. ${stockNote}`];
     const res = await fetch(`https://graph.facebook.com/${env.WHATSAPP_API_VERSION || "v21.0"}/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
       method: "POST",
       headers: { authorization: `Bearer ${env.WHATSAPP_TOKEN}`, "content-type": "application/json" },
@@ -235,19 +330,28 @@ async function requireAdmin(env, request) {
   const body = res.ok ? await res.json() : {};
   if (!body.permissions || !body.permissions.push) throw new HttpError(403, "This GitHub account can't manage the shop.", "forbidden");
 }
+const STATUSES = ["new", "packed", "shipped", "cancelled"];
 async function listOrders(env) {
   if (!env.ORDERS) return json({ orders: [], note: "Orders storage (KV) is not connected yet." });
-  const { keys } = await env.ORDERS.list({ prefix: "order:", limit: 200 });
+  const keys = [];
+  let cursor;
+  do { const page = await env.ORDERS.list({ prefix: "order:", limit: 1000, cursor }); keys.push(...page.keys); cursor = page.list_complete ? null : page.cursor; } while (cursor && keys.length < 5000);
   const orders = await Promise.all(keys.map(async (k) => ({ key: k.name, ...JSON.parse((await env.ORDERS.get(k.name)) || "{}") })));
   return json({ orders });
 }
 async function updateOrder(env, request, key) {
   if (!env.ORDERS || !/^order:[0-9]{13}:[A-Z0-9]+$/.test(key)) throw new HttpError(404, "Order not found.", "not_found");
-  const { status } = await request.json().catch(() => ({}));
-  if (!["new", "shipped"].includes(status)) throw new HttpError(400, "Status must be new or shipped.", "bad_status");
+  const body = await request.json().catch(() => ({}));
   const current = await env.ORDERS.get(key);
   if (!current) throw new HttpError(404, "Order not found.", "not_found");
-  const order = { ...JSON.parse(current), status, updatedAt: new Date().toISOString() };
+  const patch = {};
+  if (body.status !== undefined) {
+    if (!STATUSES.includes(body.status)) throw new HttpError(400, `Status must be one of ${STATUSES.join(", ")}.`, "bad_status");
+    patch.status = body.status;
+  }
+  if (body.tracking !== undefined) patch.tracking = clean(body.tracking, 200);
+  if (body.adminNote !== undefined) patch.adminNote = clean(body.adminNote, 500);
+  const order = { ...JSON.parse(current), ...patch, updatedAt: new Date().toISOString() };
   await env.ORDERS.put(key, JSON.stringify(order));
   return json({ key, ...order });
 }
