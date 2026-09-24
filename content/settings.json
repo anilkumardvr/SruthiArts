@@ -12,5 +12,6 @@
     "pickupNote": "Sruthi will message you to arrange a time and place."
   },
   "checkoutTest": true,
-  "checkoutMode": "paypalme"
+  "checkoutMode": "paypalme",
+  "checkoutApi": "https://sruthiarts-checkout.anilkumardvr.workers.dev"
 }
