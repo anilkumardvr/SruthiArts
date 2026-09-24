@@ -13,14 +13,14 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Mrs+Saint+Delafield&family=Karla:wght@400;500;700&family=DM+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Italiana&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Jost:wght@300;400;500;600&display=swap">
 <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
 <a class="skip" href="#gallery">Skip to the shop</a>
 
 <header class="site-header">
-  <a class="brand" href="#top" aria-label="Sruthi Arts, back to top"><svg class="logo-mark" viewBox="0 0 200 64" aria-hidden="true" focusable="false"><defs><linearGradient id="lgf" x1="0" x2="1"><stop offset="0" stop-color="#e0789c" stop-opacity="0"/><stop offset=".22" stop-color="#e0789c"/><stop offset=".8" stop-color="#c8927a"/><stop offset="1" stop-color="#c8927a" stop-opacity="0"/></linearGradient></defs><path class="lg-flourish" d="M6 53c34-10 64 8 104-2 24-6 40-15 66-10" fill="none" stroke="url(#lgf)" stroke-width="1.8" stroke-linecap="round"/><text class="lg-word" x="86" y="42" text-anchor="middle" font-family="'Mrs Saint Delafield', 'Brush Script MT', cursive" font-size="48" fill="currentColor">Sruthi</text><path class="lg-moon" d="M171 7a8.5 8.5 0 1 0 7.4 12.3 6.6 6.6 0 1 1-7.4-12.3z" fill="#f2c46b"/><path class="lg-spark" d="M20 10l2.4 5.6 5.6 2.4-5.6 2.4L20 26l-2.4-5.6-5.6-2.4 5.6-2.4z" fill="#e0789c"/><path class="lg-spark s2" d="M188 30l1.5 3.5 3.5 1.5-3.5 1.5-1.5 3.5-1.5-3.5-3.5-1.5 3.5-1.5z" fill="#c8927a"/><text class="lg-arts" x="178" y="56" text-anchor="middle" font-family="Karla, system-ui, sans-serif" font-weight="700" font-size="9" letter-spacing="3.6" fill="#a8325e">ARTS</text></svg></a>
+  <a class="brand" href="#top" aria-label="Sruthi Arts, back to top"><span class="wordmark" aria-hidden="true"><span class="wm-s">SRUTHI</span><span class="wm-dot">·</span><span class="wm-a">ARTS</span></span></a>
   <nav class="top-nav" aria-label="Main">
     <a href="#gallery">Shop</a>
     <a href="#about">About</a>
@@ -98,7 +98,7 @@
   <div class="viewer-inner" id="viewer-inner">
     <div class="grabber" aria-hidden="true"></div>
     <button class="close" type="button" id="viewer-close" aria-label="Close">×</button>
-    <div class="viewer-art" id="viewer-art"><img id="viewer-img" alt=""></div>
+    <div class="viewer-art" id="viewer-art"><img id="viewer-img" alt=""><button class="ph-nav prev" type="button" id="photo-prev" aria-label="Previous photo">‹</button><button class="ph-nav next" type="button" id="photo-next" aria-label="Next photo">›</button><div class="dots" id="viewer-dots" hidden></div></div>
     <div class="viewer-label">
       <p class="label-artist" id="viewer-artist"></p>
       <h2 id="viewer-title"></h2>
