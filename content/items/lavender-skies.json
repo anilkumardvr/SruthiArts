@@ -4,11 +4,12 @@
   "category": "originals",
   "description": "Calm gradients and dreamy clouds.",
   "price": 199,
-  "status": "available",
+  "status": "sold",
   "medium": "Oil on canvas",
   "width": 45,
   "height": 60,
   "alt": "Layered lavender and peach sky with soft drifting clouds",
   "date": "2026-09-22T12:03",
-  "paypalLink": "https://www.paypal.me/SruthirikaKoora"
+  "paypalLink": "https://www.paypal.me/SruthirikaKoora",
+  "quantity": 0
 }
