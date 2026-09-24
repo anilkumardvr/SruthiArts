@@ -40,6 +40,10 @@ if (data) {
   if (!a.email && !a.instagram) warnings.push("content/settings.json: email and instagram are both empty — visitors have no way to get in touch");
   if (a.checkoutApi && !/^https:\/\/[^\s/]+/.test(a.checkoutApi)) errors.push(`content/settings.json: checkoutApi "${a.checkoutApi}" must be an https:// address`);
   if (a.checkoutApi && !a.paypalClientId) warnings.push("content/settings.json: checkoutApi is set but paypalClientId is empty — checkout stays off");
+  if (a.shipping !== undefined) {
+    if (typeof a.shipping !== "object" || a.shipping === null) errors.push("content/settings.json: shipping must be an object with CA, US and intl fees");
+    else for (const k of ["CA", "US", "intl"]) if (a.shipping[k] !== undefined && !(Number.isFinite(Number(a.shipping[k])) && Number(a.shipping[k]) >= 0)) errors.push(`content/settings.json: shipping.${k} must be a number, 0 or more`);
+  }
   if (a.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email)) errors.push(`content/settings.json: email "${a.email}" is not a valid address`);
 
   const pg = data.pages || {};
