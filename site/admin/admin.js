@@ -280,7 +280,7 @@
     const btn = document.getElementById("nav-orders");
     if (!btn) return;
     btn.querySelector(".dot")?.remove();
-    const n = (S.orders || []).filter((o) => o.status !== "shipped").length;
+    const n = (S.orders || []).filter((o) => !o.status || o.status === "new" || o.status === "packed").length;
     if (n) btn.append(el("span", { class: "dot", text: String(n) }));
   }
   function renderView() {
@@ -554,37 +554,156 @@
   const stripPrivate = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith("_") && k !== "id"));
 
   // ---------- Orders ----------
+  // ---------- Orders ----------
+  // Older orders (single item, address from PayPal) are shown with the same layout as cart orders.
+  function normOrder(o) {
+    if (o._n) return o;
+    const items = Array.isArray(o.items) && o.items.length ? o.items : o.itemId ? [{ id: o.itemId, title: o.title || o.itemId, qty: o.quantity || 1, price: 0 }] : [];
+    const d = o.delivery || { method: "ship", name: (o.shipTo && o.shipTo.name) || (o.buyer && o.buyer.name) || "", email: (o.buyer && o.buyer.email) || "", phone: "", address: null, legacy: (o.shipTo && o.shipTo.address) || "" };
+    return Object.assign(o, { _n: true, items, delivery: d, number: o.number || `#${String(o.orderId || "").slice(-6)}`, status: o.status || "new" });
+  }
+  const ORDER_STATUS = { new: "New", packed: "Packed", shipped: "Shipped", cancelled: "Cancelled" };
+  const isOpen = (o) => o.status === "new" || o.status === "packed";
+  const addrLines = (o) => {
+    const d = o.delivery;
+    if (d.method === "pickup") return ["Pickup"];
+    if (!d.address) return [d.name, d.legacy].filter(Boolean);
+    const a = d.address;
+    let country = a.country;
+    try { country = new Intl.DisplayNames(["en"], { type: "region" }).of(a.country) || a.country; } catch {}
+    return [d.name, a.line1, a.line2, [a.city, a.region, a.postal].filter(Boolean).join(" "), country].filter(Boolean);
+  };
+  const orderMoney = (n, cur) => { try { return new Intl.NumberFormat("en-CA", { style: "currency", currency: cur || S.settings.currency || "CAD" }).format(Number(n) || 0); } catch { return `$${n}`; } };
+  async function copyText(text, msg) { try { await navigator.clipboard.writeText(text); toast(msg); } catch { toast("Couldn't copy. Select the text instead.", "err"); } }
+
   function ordersView() {
-    if (!checkoutApi()) return emptyState("Orders appear here", "Once PayPal checkout is connected (Settings → Checkout), every sale shows up here with the buyer's address, and Sruthi gets a WhatsApp alert.", "Open settings", () => setTab("settings"));
+    if (!checkoutApi()) return emptyState("Orders appear here", "Once PayPal checkout is connected (Settings → Checkout), every sale shows up here with the customer's delivery address, and Sruthi gets a WhatsApp alert.", "Open settings", () => setTab("settings"));
     if (S.orders === null) return el("div", { class: "orders" }, Array.from({ length: 3 }, () => el("div", { class: "order skeleton", style: "height:110px" })));
+    const all = S.orders.map(normOrder);
     const wrap = el("div", { class: "orders" });
     if (S.ordersError) wrap.append(el("p", { class: "warn", text: S.ordersError }));
-    if (!S.orders.length) { wrap.append(emptyState("No orders yet", "When someone buys through PayPal, the order appears here.")); return wrap; }
-    S.orders.forEach((o, i) => {
-      const it = S.items.find((x) => x.id === o.itemId);
-      const addr = [o.shipTo && o.shipTo.name, o.shipTo && o.shipTo.address].filter(Boolean).join(", ");
-      wrap.append(el("article", { class: "order", style: `--i:${i}` },
-        el("img", { src: it ? imgUrl(it.image) : "", alt: "" }),
-        el("div", {},
-          el("h3", { text: `${o.title} ×${o.quantity}` }),
-          el("p", { text: `${o.amount} ${o.currency} · ${new Date(o.createdAt).toLocaleString()}` }),
-          el("p", { class: "muted", text: `${o.buyer && o.buyer.name || "Buyer"}${o.buyer && o.buyer.email ? ` · ${o.buyer.email}` : ""}` }),
-          el("p", { text: addr || "No address from PayPal" })),
-        o.stockError ? el("p", { class: "warn", style: "grid-column:1/-1", text: `Stock wasn't updated automatically (${o.stockError}). Adjust it on the post.` }) : null,
-        el("div", { class: "foot" },
-          el("span", { class: `pill${o.status === "shipped" ? " shipped" : ""}`, text: o.status === "shipped" ? "Shipped" : "To ship" }),
-          el("span", {},
-            addr ? el("button", { class: "btn light", style: "min-height:38px;margin-right:6px", onclick: async () => { try { await navigator.clipboard.writeText(`${addr}`); toast("Address copied"); } catch { toast("Couldn't copy — select the text instead", "err"); } } }, "Copy address") : null,
-            el("button", { class: `btn${o.status === "shipped" ? " light" : ""}`, style: "min-height:38px", onclick: () => setOrder(o, o.status === "shipped" ? "new" : "shipped") }, o.status === "shipped" ? "Undo" : "Mark shipped")))));
-    });
+    if (!all.length) { wrap.append(emptyState("No orders yet", "When someone checks out, the order appears here with their delivery address.")); return wrap; }
+
+    S.ofilter = S.ofilter || "todo"; S.ogroup = S.ogroup || "orders"; S.oproduct = S.oproduct || ""; S.oq = S.oq || "";
+    const live = all.filter((o) => o.status !== "cancelled");
+    const cur = (live[0] || all[0]).currency;
+    wrap.append(el("div", { class: "ostats" },
+      [["Orders", live.length], ["To ship", live.filter(isOpen).length], ["Items sold", live.reduce((t, o) => t + o.items.reduce((u, l) => u + Number(l.qty || 0), 0), 0)], ["Sales", orderMoney(live.reduce((t, o) => t + Number(o.amount || 0), 0), cur)]]
+        .map(([k, v], i) => el("div", { class: "ostat", style: `--i:${i}` }, el("b", { text: String(v) }), el("span", { text: k })))));
+
+    // Filters
+    const products = new Map();
+    all.forEach((o) => o.items.forEach((l) => { const p = products.get(l.id) || { id: l.id, title: l.title, qty: 0 }; p.qty += Number(l.qty || 0); products.set(l.id, p); }));
+    const counts = { todo: all.filter(isOpen).length, shipped: all.filter((o) => o.status === "shipped").length, all: all.length, cancelled: all.filter((o) => o.status === "cancelled").length };
+    const chips = el("div", { class: "chips" }, [["todo", "To ship"], ["shipped", "Shipped"], ["all", "All"], ...(counts.cancelled ? [["cancelled", "Cancelled"]] : [])].map(([id, label]) =>
+      el("button", { class: "chip", "aria-pressed": String(S.ofilter === id), onclick: () => { S.ofilter = id; renderView(); } }, `${label} `, el("small", { text: String(counts[id]) }))));
+    const productSel = el("select", { class: "osel", "aria-label": "Filter by product", onchange: (e) => { S.oproduct = e.target.value; renderView(); } },
+      el("option", { value: "", text: "All products" }),
+      [...products.values()].sort((a, b) => a.title.localeCompare(b.title)).map((p) => el("option", { value: p.id, selected: S.oproduct === p.id ? true : null, text: `${p.title} (${p.qty} sold)` })));
+    const search = el("input", { class: "osearch", type: "search", placeholder: "Search name, city, order…", value: S.oq, oninput: (e) => { S.oq = e.target.value; clearTimeout(S.oqT); S.oqT = setTimeout(() => { renderView(); const s = document.querySelector(".osearch"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }, 250); } });
+    const groupBtns = el("div", { class: "seg", role: "group", "aria-label": "Group orders" },
+      [["orders", "By order"], ["products", "By product"]].map(([id, label]) => el("button", { type: "button", "aria-pressed": String(S.ogroup === id), onclick: () => { S.ogroup = id; renderView(); } }, label)));
+    const q = S.oq.trim().toLowerCase();
+    const shown = all.filter((o) =>
+      (S.ofilter === "all" || (S.ofilter === "todo" ? isOpen(o) : o.status === S.ofilter)) &&
+      (!S.oproduct || o.items.some((l) => l.id === S.oproduct)) &&
+      (!q || [o.number, o.delivery.name, o.delivery.email, o.delivery.phone, ...addrLines(o), ...o.items.map((l) => l.title)].join(" ").toLowerCase().includes(q)));
+    wrap.append(el("div", { class: "otools" }, chips,
+      el("div", { class: "orow" }, productSel, search),
+      el("div", { class: "orow" }, groupBtns,
+        el("span", { class: "grow" }),
+        el("button", { type: "button", class: "btn light small", onclick: () => downloadCsv(shown) }, "Download CSV"),
+        el("button", { type: "button", class: "btn light small", "aria-label": "Refresh orders", onclick: async (e) => { e.currentTarget.disabled = true; await loadOrders(); renderNavBadges(); renderView(); toast("Orders refreshed"); } }, "↻"))));
+
+    if (!shown.length) { wrap.append(el("p", { class: "empty-note", text: S.ofilter === "todo" ? "Nothing waiting to ship. 🎉" : "No orders match." })); return wrap; }
+    if (S.ogroup === "products") wrap.append(byProduct(shown)); else shown.forEach((o, i) => wrap.append(orderCard(o, i)));
     return wrap;
   }
-  async function setOrder(o, status) {
+
+  function orderCard(o, i) {
+    const d = o.delivery;
+    const lines = addrLines(o);
+    const tracking = el("input", { type: "text", class: "otrack", placeholder: "Tracking number (optional)", value: o.tracking || "",
+      onchange: (e) => setOrder(o, { tracking: e.target.value.trim() }, "Tracking saved") });
+    const stepsEl = el("div", { class: "ostatus", role: "group", "aria-label": "Order status" },
+      ["new", "packed", "shipped"].map((st) => el("button", { type: "button", "aria-pressed": String(o.status === st), onclick: () => o.status !== st && setOrder(o, { status: st }, st === "shipped" ? (d.method === "pickup" ? "Marked as picked up" : "Marked as shipped 📦") : `Marked as ${ORDER_STATUS[st].toLowerCase()}`) },
+        st === "shipped" && d.method === "pickup" ? "Picked up" : ORDER_STATUS[st])));
+    const date = new Date(o.createdAt);
+    return el("article", { class: `order v2 st-${o.status}`, style: `--i:${Math.min(i, 12)}` },
+      el("header", { class: "ohead" },
+        el("div", {}, el("h3", { text: o.number }), el("p", { class: "muted", text: isNaN(date) ? "" : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) })),
+        el("span", { class: `pill st-${o.status}`, text: o.status === "shipped" && d.method === "pickup" ? "Picked up" : ORDER_STATUS[o.status] || o.status })),
+      el("ul", { class: "oitems" }, o.items.map((l) => {
+        const it = S.items.find((x) => x.id === l.id);
+        return el("li", {}, el("img", { src: it ? imgUrl(it.image) : l.image ? imgUrl(l.image) : "", alt: "" }), el("span", { text: l.title }), el("b", { text: `× ${l.qty}` }));
+      })),
+      el("div", { class: "ogrid" },
+        el("section", {},
+          el("h4", { text: d.method === "pickup" ? "Pickup" : "Ship to" }),
+          el("address", {}, lines.map((t) => el("span", { text: t }))),
+          d.method !== "pickup" && lines.length ? el("button", { type: "button", class: "link", onclick: () => copyText(lines.join("\n"), "Address copied") }, "Copy address") : null),
+        el("section", {},
+          el("h4", { text: "Customer" }),
+          el("p", { text: d.name || (o.buyer && o.buyer.name) || "—" }),
+          d.email ? el("a", { href: `mailto:${d.email}?subject=${encodeURIComponent(`Your Sruthi Arts order ${o.number}`)}` }, d.email) : null,
+          d.phone ? el("a", { href: `tel:${d.phone.replace(/[^\d+]/g, "")}` }, d.phone) : null)),
+      d.note ? el("p", { class: "onote" }, el("b", { text: "Note: " }), d.note) : null,
+      el("dl", { class: "omoney" },
+        o.subtotal !== undefined ? el("div", {}, el("dt", { text: "Items" }), el("dd", { text: orderMoney(o.subtotal, o.currency) })) : null,
+        o.shipping ? el("div", {}, el("dt", { text: "Delivery" }), el("dd", { text: orderMoney(o.shipping, o.currency) })) : null,
+        el("div", { class: "paid" }, el("dt", { text: "Paid" }), el("dd", { text: orderMoney(o.amount, o.currency) }))),
+      (o.stock || []).some((s) => s.left === null) || o.stockError ? el("p", { class: "warn", text: "Stock wasn't updated automatically for this order. Adjust it on the post." }) : null,
+      o.status !== "cancelled" ? stepsEl : null,
+      o.status !== "cancelled" && d.method !== "pickup" ? tracking : null,
+      el("div", { class: "ofoot" },
+        o.status === "cancelled"
+          ? el("button", { type: "button", class: "link", onclick: () => setOrder(o, { status: "new" }, "Order restored") }, "Restore order")
+          : el("button", { type: "button", class: "link muted", onclick: () => { if (confirm(`Mark ${o.number} as cancelled? Refund the customer in PayPal first; this only changes the label here.`)) setOrder(o, { status: "cancelled" }, "Order cancelled"); } }, "Cancel order")));
+  }
+
+  // Everything that needs sending, grouped by piece: who bought it and where it goes.
+  function byProduct(orders) {
+    const groups = new Map();
+    orders.forEach((o) => o.items.forEach((l) => {
+      if (S.oproduct && l.id !== S.oproduct) return;
+      const g = groups.get(l.id) || { id: l.id, title: l.title, qty: 0, rows: [] };
+      g.qty += Number(l.qty || 0); g.rows.push({ o, qty: l.qty });
+      groups.set(l.id, g);
+    }));
+    return el("div", { class: "pgroups" }, [...groups.values()].sort((a, b) => b.qty - a.qty).map((g, i) => {
+      const it = S.items.find((x) => x.id === g.id);
+      const allAddr = g.rows.map(({ o, qty }) => [`${o.number} · ${g.title} × ${qty}`, ...addrLines(o), o.delivery.phone || ""].filter(Boolean).join("\n")).join("\n\n");
+      return el("section", { class: "pgroup", style: `--i:${i}` },
+        el("header", {},
+          el("img", { src: it ? imgUrl(it.image) : "", alt: "" }),
+          el("div", {}, el("h3", { text: g.title }), el("p", { class: "muted", text: `${g.qty} to send · ${g.rows.length} order${g.rows.length > 1 ? "s" : ""}` })),
+          el("button", { type: "button", class: "btn light small", onclick: () => copyText(allAddr, `Copied ${g.rows.length} address${g.rows.length > 1 ? "es" : ""}`) }, "Copy all")),
+        el("ol", {}, g.rows.map(({ o, qty }) => el("li", {},
+          el("div", { class: "prow-top" }, el("b", { text: `× ${qty}` }), el("span", { text: o.delivery.name || "—" }), el("span", { class: `pill st-${o.status}`, text: ORDER_STATUS[o.status] })),
+          el("address", { text: o.delivery.method === "pickup" ? `Pickup · ${o.delivery.phone || o.delivery.email}` : addrLines(o).slice(1).join(", ") }),
+          el("small", { class: "muted", text: o.number })))));
+    }));
+  }
+
+  function downloadCsv(orders) {
+    const head = ["Order", "Date", "Status", "Item", "Qty", "Name", "Email", "Phone", "Method", "Address line 1", "Address line 2", "City", "Province/State", "Postal code", "Country", "Note", "Items total", "Delivery", "Paid", "Currency", "Tracking"];
+    const esc = (v) => { const s = String(v == null ? "" : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const rows = [head];
+    orders.forEach((o) => o.items.forEach((l) => {
+      const a = o.delivery.address || {};
+      rows.push([o.number, o.createdAt, ORDER_STATUS[o.status] || o.status, l.title, l.qty, o.delivery.name, o.delivery.email, o.delivery.phone, o.delivery.method, a.line1 || o.delivery.legacy || "", a.line2, a.city, a.region, a.postal, a.country, o.delivery.note, o.subtotal, o.shipping, o.amount, o.currency, o.tracking]);
+    }));
+    const blob = new Blob(["﻿" + rows.map((r) => r.map(esc).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const a = el("a", { href: URL.createObjectURL(blob), download: `sruthiarts-orders-${new Date().toISOString().slice(0, 10)}.csv` });
+    document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  async function setOrder(o, patch, msg) {
     try {
-      const res = await fetch(`${checkoutApi()}/api/admin/orders/${encodeURIComponent(o.key)}`, { method: "PATCH", headers: { authorization: `Bearer ${S.token}`, "content-type": "application/json" }, body: JSON.stringify({ status }) });
+      const res = await fetch(`${checkoutApi()}/api/admin/orders/${encodeURIComponent(o.key)}`, { method: "PATCH", headers: { authorization: `Bearer ${S.token}`, "content-type": "application/json" }, body: JSON.stringify(patch) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Couldn't update the order");
-      o.status = status; toast(status === "shipped" ? "Marked as shipped 📦" : "Moved back to To ship"); renderView(); renderNavBadges();
+      Object.assign(o, patch); toast(msg); renderView(); renderNavBadges();
     } catch (e) { toast(e.message, "err"); }
   }
 
@@ -639,6 +758,9 @@
     const dirty = () => { S.dirty = true; saveBar.hidden = false; };
     const inp = (key, label, attrs = {}, hint) => el("label", { class: "field" }, el("span", { text: label }), el("input", { type: "text", ...attrs, value: d[key] || "", oninput: (e) => { d[key] = e.target.value.trim(); dirty(); } }), hint ? el("small", { text: hint }) : null);
     const status = el("div", { class: "cat-chips" });
+    const ship = () => (d.shipping = d.shipping && typeof d.shipping === "object" ? d.shipping : { CA: 15, US: 25, intl: 40, pickup: true, pickupNote: "" });
+    const pickupNote = el("label", { class: "field", hidden: ship().pickup === false }, el("span", { text: "Pickup details shown to buyers" }),
+      el("input", { type: "text", maxlength: 120, placeholder: "e.g. Downtown Toronto. Sruthi will message you to set a time.", value: ship().pickupNote || "", oninput: (e) => { ship().pickupNote = e.target.value; dirty(); } }));
     const test = async () => {
       status.replaceChildren(el("span", { class: "pill", text: "Checking…" }));
       try {
@@ -656,8 +778,16 @@
         inp("checkoutApi", "Checkout server URL", { type: "url", placeholder: "https://sruthiarts-checkout.<you>.workers.dev" }, "Leave empty until the checkout server is set up (docs/SETUP.md)."),
         inp("paypalClientId", "PayPal client ID", {}, "Public ID from developer.paypal.com. With the server URL, this turns on the PayPal buttons and automatic stock updates."),
         inp("paypal", "PayPal.me username", { placeholder: "SruthirikaKoora" }, "Just the name after paypal.me/, without @. Used for the Buy button until checkout is set up."),
+        el("label", { class: "switch" }, el("input", { type: "checkbox", checked: Boolean(d.checkoutTest), onchange: (e) => { d.checkoutTest = e.target.checked; dirty(); } }), el("span", { text: "Test mode: only show the cart at sruthiarts.com/?test" })),
         el("button", { class: "btn light", onclick: test }, "Test connection"), status),
-      el("section", { class: "card", style: "--i:2" }, el("h2", { text: "Account" }),
+      el("section", { class: "card", style: "--i:2" }, el("h2", { text: "Delivery & pickup" }),
+        el("p", { class: "muted", style: "margin:0", text: `Delivery fee per order, in ${d.currency || "CAD"}. Use 0 for free delivery.` }),
+        el("div", { class: "fees" },
+          [["CA", "Canada", 15], ["US", "USA", 25], ["intl", "Rest of the world", 40]].map(([k, label, def]) =>
+            el("label", { class: "field" }, el("span", { text: label }), el("input", { type: "number", inputmode: "decimal", min: 0, step: "1", value: String(ship()[k] ?? def), oninput: (e) => { ship()[k] = e.target.value; dirty(); } })))),
+        el("label", { class: "switch" }, el("input", { type: "checkbox", checked: ship().pickup !== false, onchange: (e) => { ship().pickup = e.target.checked; dirty(); pickupNote.hidden = !e.target.checked; } }), el("span", { text: "Offer free pickup" })),
+        pickupNote),
+      el("section", { class: "card", style: "--i:3" }, el("h2", { text: "Account" }),
         el("p", { style: "margin:0", text: S.user ? `Signed in as @${S.user.login}` : "" }),
         el("div", { class: "two", style: "display:flex;gap:8px;flex-wrap:wrap" },
           el("button", { class: "btn light", onclick: () => signOut("Signed out.") }, "Sign out"),
@@ -669,6 +799,17 @@
       const { sha } = await getJson("content/settings.json");
       const clean = Object.fromEntries(Object.entries(S.setDraft).map(([k, v]) => [k, typeof v === "string" ? v.trim() : v]));
       clean.instagram = (clean.instagram || "").replace(/^@/, "");
+      if (clean.shipping) {
+        const sh = { ...clean.shipping };
+        for (const k of ["CA", "US", "intl"]) {
+          const n = Number(sh[k]);
+          if (sh[k] === "" || !Number.isFinite(n) || n < 0) return toast("Delivery fees must be 0 or more.", "err");
+          sh[k] = Math.round(n * 100) / 100;
+        }
+        sh.pickup = sh.pickup !== false; sh.pickupNote = String(sh.pickupNote || "").trim();
+        clean.shipping = sh;
+      }
+      clean.checkoutTest = Boolean(clean.checkoutTest);
       clean.paypal = (clean.paypal || "").replace(/^https?:\/\/(www\.)?paypal\.me\//i, "").replace(/^paypal\.me\//i, "").replace(/^@/, "").replace(/[/?#].*$/, "");
       if (clean.checkoutApi) {
         let ok = false;
