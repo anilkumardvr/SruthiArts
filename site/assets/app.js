@@ -4,6 +4,17 @@
   "use strict";
 
   const $ = (sel) => document.querySelector(sel);
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const MULTI_ICON = () => {
+    const svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+    for (const [x, y] of [[8, 3], [3, 8]]) {
+      const r = document.createElementNS(SVGNS, "rect");
+      Object.entries({ x, y, width: 13, height: 13, rx: 2.5 }).forEach(([k, v]) => r.setAttribute(k, v));
+      svg.append(r);
+    }
+    return svg;
+  };
   const el = (tag, attrs = {}, ...children) => {
     const node = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) {
@@ -27,7 +38,7 @@
     { id: "originals", label: "Originals" },
     { id: "prints", label: "Prints" },
   ];
-  const state = { paintings: [], artist: {}, pages: null, filter: "all", current: -1, qty: 1 };
+  const state = { paintings: [], artist: {}, pages: null, filter: "all", current: -1, photo: 0, qty: 1 };
   let money = (n) => `$${n}`;
 
   const spec = (p) => `${p.medium} · ${p.width} × ${p.height} cm`;
@@ -87,6 +98,7 @@
           el("button", { type: "button", "aria-label": `View ${p.title}, ${stockLabel(p)}`, onclick: () => open(idx) },
             el("div", { class: "frame" },
               img({ src: p.image, alt: p.alt || p.title, loading: i < 4 ? "eager" : "lazy", width: "800", height: "1000" }),
+              photosOf(p).length > 1 ? el("span", { class: "multi-badge", title: `${photosOf(p).length} photos` }, MULTI_ICON(), el("span", { class: "sr", text: `${photosOf(p).length} photos` })) : null,
               isSold(p) ? el("span", { class: "ribbon", text: "Sold" }) : null
             )
           ),
@@ -303,18 +315,36 @@
 
   // ---------- Viewer (bottom sheet on phones, dialog on larger screens) ----------
   const viewer = $("#viewer");
+  const photosOf = (p) => (p && p.images && p.images.length ? p.images : [p && p.image].filter(Boolean));
+  // Show photo i of the open piece; dir slides it in from the right (1) or left (-1).
+  function showPhoto(i, dir = 0) {
+    const p = state.paintings[state.current];
+    const list = photosOf(p);
+    if (!list.length) return;
+    state.photo = (i + list.length) % list.length;
+    const vimg = $("#viewer-img");
+    vimg.classList.remove("is-loaded", "slide-l", "slide-r");
+    if (dir) { void vimg.offsetWidth; vimg.classList.add(dir > 0 ? "slide-l" : "slide-r"); }
+    vimg.onload = () => vimg.classList.add("is-loaded");
+    vimg.src = list[state.photo];
+    if (vimg.complete && vimg.naturalWidth) vimg.classList.add("is-loaded");
+    vimg.alt = list.length > 1 ? `${p.alt || p.title} (photo ${state.photo + 1} of ${list.length})` : p.alt || p.title;
+    const multi = list.length > 1;
+    $("#viewer-art").classList.toggle("multi", multi);
+    const dots = $("#viewer-dots");
+    dots.hidden = !multi;
+    dots.replaceChildren(...(multi ? list.map((_, k) => el("button", {
+      type: "button", class: k === state.photo ? "on" : "", "aria-label": `Photo ${k + 1} of ${list.length}`,
+      "aria-current": k === state.photo ? "true" : null, onclick: () => showPhoto(k, k > state.photo ? 1 : -1),
+    })) : []));
+    if (multi) list.forEach((src, k) => { if (k !== state.photo) { const pre = new Image(); pre.src = src; } });
+  }
   function open(idx, { push = true } = {}) {
     const p = state.paintings[idx];
     if (!p) return;
     const dir = state.current === -1 || !viewer.open ? 0 : idx > state.current ? 1 : -1;
     state.current = idx;
-    const vimg = $("#viewer-img");
-    vimg.classList.remove("is-loaded", "slide-l", "slide-r");
-    if (dir) { void vimg.offsetWidth; vimg.classList.add(dir > 0 ? "slide-l" : "slide-r"); }
-    vimg.onload = () => vimg.classList.add("is-loaded");
-    vimg.src = p.image;
-    if (vimg.complete && vimg.naturalWidth) vimg.classList.add("is-loaded");
-    vimg.alt = p.alt || p.title;
+    showPhoto(0, dir);
     $("#viewer-artist").textContent = state.artist.name || "Sruthi";
     $("#viewer-title").textContent = p.title;
     $("#viewer-spec").textContent = spec(p);
@@ -365,6 +395,8 @@
   $("#viewer-prev").addEventListener("click", () => step(-1));
   $("#viewer-next").addEventListener("click", () => step(1));
   $("#viewer-close").addEventListener("click", closeViewer);
+  $("#photo-prev").addEventListener("click", () => showPhoto(state.photo - 1, -1));
+  $("#photo-next").addEventListener("click", () => showPhoto(state.photo + 1, 1));
   viewer.addEventListener("click", (e) => { if (e.target === viewer) closeViewer(); });
   viewer.addEventListener("cancel", (e) => { e.preventDefault(); closeViewer(); });
   viewer.addEventListener("keydown", (e) => { if (e.key === "ArrowLeft") step(-1); if (e.key === "ArrowRight") step(1); });
@@ -394,7 +426,9 @@
         inner.style.transition = "";
         if (dy > 110) closeViewer(); else inner.style.transform = "";
       } else if (art.contains(e.target) && Math.abs(mx) > 50 && Math.abs(mx) > Math.abs(my) * 1.5) {
-        step(mx < 0 ? 1 : -1);
+        // Swipe through this piece's photos first, then on to the next piece (like Instagram).
+        const d = mx < 0 ? 1 : -1, n = photosOf(state.paintings[state.current]).length, next = state.photo + d;
+        if (n > 1 && next >= 0 && next < n) showPhoto(next, d); else step(d);
       }
       mode = "";
     });

@@ -15,9 +15,10 @@
   --line: rgba(59, 29, 44, .12);
   --shadow: 0 18px 50px rgba(168, 50, 94, .14);
 
-  --display: "IM Fell English", "Iowan Old Style", Georgia, serif;
-  --body: "Karla", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --display: "Playfair Display", "Iowan Old Style", Georgia, serif;
+  --body: "Jost", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Jost", ui-sans-serif, system-ui, sans-serif; /* small caps-style labels and prices */
+  --wordmark: "Italiana", "Playfair Display", Georgia, serif;
 
   --step--1: .8125rem;
   --step-0: 1rem;
@@ -68,9 +69,10 @@ em { font-style: italic; }
   padding-block: 14px;
   background: linear-gradient(var(--blush) 62%, rgba(255, 244, 246, 0));
 }
-.brand { display: inline-block; line-height: 0; color: var(--plum); text-decoration: none; margin-block: -6px; }
-.logo-mark { height: 58px; width: auto; overflow: visible; }
-.lg-moon, .lg-spark { transform-box: fill-box; transform-origin: center; }
+.brand { display: inline-block; color: var(--plum); text-decoration: none; }
+.wordmark { display: inline-flex; align-items: center; font: 400 clamp(1.25rem, 1rem + .8vw, 1.6rem)/1 var(--wordmark); letter-spacing: .32em; white-space: nowrap; color: var(--plum); margin-right: -.32em; }
+.wordmark .wm-dot { color: var(--rose); margin: 0 .1em 0 -.02em; display: inline-block; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .top-nav { display: flex; align-items: center; gap: clamp(14px, 3vw, 28px); }
 .top-nav a { color: var(--mauve); text-decoration: none; font-size: var(--step--1); letter-spacing: .08em; text-transform: uppercase; position: relative; padding-block: 6px; }
 .top-nav a:not(.ig)::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1.5px; background: var(--berry); transform: scaleX(0); transform-origin: left; transition: transform .3s var(--ease); }
@@ -303,15 +305,12 @@ section { padding-block: clamp(48px, 8vw, 96px); }
   .hero h1 .w { animation: wordUp .9s var(--ease) both; animation-delay: calc(.12s + var(--d, 0) * 70ms); }
   @keyframes wordUp { from { opacity: 0; transform: translateY(.45em) rotate(2deg); filter: blur(4px); } }
 
-  /* Logo: the flourish paints itself in, the moon rises, sparkles twinkle */
-  .lg-flourish { stroke-dasharray: 240; stroke-dashoffset: 240; animation: lgDraw 1.6s .2s var(--ease) forwards; }
-  .lg-word { animation: lgInk 1.2s .1s var(--ease) both; }
-  .lg-moon { animation: lgMoon .9s .9s var(--spring) both; }
-  .lg-spark { animation: twinkle 2.8s 1.3s ease-in-out infinite; }
-  .lg-spark.s2 { animation-delay: 2.2s; }
-  .lg-arts { animation: up .8s 1.1s var(--ease) both; }
-  .brand:hover .lg-moon { animation: lgSwing 1.2s ease-in-out; }
-  @keyframes lgDraw { to { stroke-dashoffset: 0; } }
+  /* Name: "Sruthi" inks in, "Arts" follows, the moon rises and sways on hover */
+  .wordmark .wm-s { animation: lgSpread 1.1s .1s var(--ease) both; }
+  .wordmark .wm-a { animation: lgSpread 1.1s .3s var(--ease) both; }
+  .wordmark .wm-dot { animation: lgMoon .8s .75s var(--spring) both; }
+  .brand:hover .wm-dot { animation: lgSwing 1.2s ease-in-out; }
+  @keyframes lgSpread { from { opacity: 0; letter-spacing: .05em; filter: blur(3px); } }
   @keyframes lgInk { from { opacity: 0; filter: blur(3px); } }
   @keyframes lgMoon { from { opacity: 0; transform: translateY(8px) scale(.4) rotate(-40deg); } }
   @keyframes lgSwing { 30% { transform: rotate(-18deg); } 65% { transform: rotate(10deg); } }
@@ -361,7 +360,7 @@ section { padding-block: clamp(48px, 8vw, 96px); }
 @media (max-width: 700px) {
   :root { --tabbar-h: 64px; }
   .site-header { padding-block: 10px; }
-  .logo-mark { height: 46px; }
+  .wordmark { font-size: 1.2rem; letter-spacing: .26em; margin-right: -.26em; }
   .top-nav a:not(.ig) { display: none; }
   .ig [data-ig-handle] { display: none; }
   .top-nav a.ig { width: 44px; height: 44px; justify-content: center; border-radius: 50%; background: var(--paper); box-shadow: 0 0 0 1px var(--line); }
@@ -413,3 +412,17 @@ section { padding-block: clamp(48px, 8vw, 96px); }
   .label-desc { font-size: 1.05rem; }
   .close { top: 12px; right: 12px; }
 }
+
+/* ---------- Several photos per piece ---------- */
+.frame { position: relative; }
+.multi-badge { position: absolute; top: 10px; right: 10px; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: rgba(59, 35, 48, .45); backdrop-filter: blur(4px); color: #fff; pointer-events: none; }
+.multi-badge svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; }
+.viewer-art { position: relative; }
+.ph-nav { display: none; position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255, 250, 251, .88); color: var(--plum); font: 400 1.6rem/1 var(--body); cursor: pointer; box-shadow: 0 4px 14px rgba(59, 29, 44, .18); transition: transform .2s var(--ease), background .2s; }
+.ph-nav:hover { background: #fff; transform: translateY(-50%) scale(1.08); }
+.ph-nav.prev { left: 12px; } .ph-nav.next { right: 12px; }
+.viewer-art.multi .ph-nav { display: grid; place-items: center; padding-bottom: 3px; }
+.dots { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: center; gap: 7px; }
+.dots button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: rgba(59, 35, 48, .28); cursor: pointer; transition: transform .25s var(--spring), background .25s; }
+.dots button.on { background: var(--berry); transform: scale(1.35); }
+@media (pointer: coarse) { .viewer-art.multi .ph-nav { display: none; } .dots button { width: 7px; height: 7px; } }
