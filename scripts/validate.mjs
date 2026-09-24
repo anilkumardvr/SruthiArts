@@ -26,7 +26,8 @@ if (data) {
     if (!/^[a-z0-9-]+$/.test(p.id)) errors.push(`${where}: file name must be lowercase letters, digits and dashes (it becomes the item's link)`);
     if (!CATEGORIES.includes(p.category)) errors.push(`${where}: category must be one of ${CATEGORIES.join(", ")}`);
     if (p.status && !["available", "sold"].includes(p.status)) errors.push(`${where}: status must be "available" or "sold"`);
-    if (p.image && !existsSync(join(SITE, p.image))) errors.push(`${where}: image not found at site/${p.image}`);
+    for (const im of p.images || [p.image]) if (im && !existsSync(join(SITE, im))) errors.push(`${where}: photo not found at site/${im}`);
+    if ((p.images || []).length > 10) warnings.push(`${where}: has ${p.images.length} photos; 10 or fewer keeps the page fast`);
     if (!Number.isInteger(p.quantity) || p.quantity < 0) errors.push(`${where}: quantity must be a whole number, 0 or more`);
     if (p.paypalLink && !/^https:\/\//.test(p.paypalLink)) errors.push(`${where}: paypalLink must start with https://`);
   });
@@ -49,7 +50,7 @@ if (data) {
   if (pg.about && pg.about.photo && !existsSync(join(SITE, pg.about.photo))) errors.push(`content/pages.json: about photo not found at site/${pg.about.photo}`);
 
   // Unused images are harmless but usually a mistake
-  const used = new Set([...(data.paintings || []).map((p) => p.image), pg.about && pg.about.photo].filter(Boolean));
+  const used = new Set([...(data.paintings || []).flatMap((p) => p.images || [p.image]), pg.about && pg.about.photo].filter(Boolean));
   for (const f of readdirSync(join(SITE, "images/paintings"))) {
     if (!used.has(`images/paintings/${f}`)) warnings.push(`images/paintings/${f} is not used on the page`);
   }
