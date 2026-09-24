@@ -37,7 +37,7 @@ a { color: var(--berry); }
 .login-card { width: min(100%, 360px); display: grid; gap: 16px; text-align: center; animation: rise .6s var(--spring) both; }
 .logo { display: inline-block; margin: 0; line-height: 1; color: var(--ink); font-weight: 400; }
 .wordmark { display: inline-flex; align-items: center; font: 400 2.1rem/1 var(--wordmark); letter-spacing: .3em; margin-right: -.3em; white-space: nowrap; color: #3b2330; }
-.wordmark .wm-dot { color: #e0789c; margin: 0 .1em 0 -.02em; display: inline-block; animation: pop .7s .6s var(--spring) both; }
+.wordmark .wm-dot { display: inline-block; width: .2em; height: .2em; border-radius: 50%; background: #e0789c; color: transparent; overflow: hidden; letter-spacing: 0; margin: 0 .5em 0 .2em; animation: pop .7s .6s var(--spring) both; }
 .wordmark .wm-s, .wordmark .wm-a { animation: lgSpread 1s .1s var(--ease) both; }
 .wordmark .wm-a { animation-delay: .28s; }
 .topbar .wordmark, .profile .wordmark { font-size: 1.15rem; letter-spacing: .26em; margin-right: -.26em; }
