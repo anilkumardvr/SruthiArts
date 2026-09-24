@@ -3,5 +3,13 @@
   "instagram": "sruthi_artss",
   "email": "",
   "paypal": "SruthirikaKoora",
-  "currency": "CAD"
+  "currency": "CAD",
+  "shipping": {
+    "CA": 15,
+    "US": 25,
+    "intl": 40,
+    "pickup": true,
+    "pickupNote": "Sruthi will message you to arrange a time and place."
+  },
+  "checkoutTest": true
 }
