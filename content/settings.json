@@ -11,5 +11,6 @@
     "pickup": true,
     "pickupNote": "Sruthi will message you to arrange a time and place."
   },
-  "checkoutTest": true
+  "checkoutTest": true,
+  "checkoutMode": "paypalme"
 }
