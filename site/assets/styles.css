@@ -71,7 +71,7 @@ em { font-style: italic; }
 }
 .brand { display: inline-block; color: var(--plum); text-decoration: none; }
 .wordmark { display: inline-flex; align-items: center; font: 400 clamp(1.25rem, 1rem + .8vw, 1.6rem)/1 var(--wordmark); letter-spacing: .32em; white-space: nowrap; color: var(--plum); margin-right: -.32em; }
-.wordmark .wm-dot { color: var(--rose); margin: 0 .1em 0 -.02em; display: inline-block; }
+.wordmark .wm-dot { display: inline-block; width: .2em; height: .2em; border-radius: 50%; background: var(--rose); color: transparent; overflow: hidden; letter-spacing: 0; margin: 0 .52em 0 .2em; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .top-nav { display: flex; align-items: center; gap: clamp(14px, 3vw, 28px); }
 .top-nav a { color: var(--mauve); text-decoration: none; font-size: var(--step--1); letter-spacing: .08em; text-transform: uppercase; position: relative; padding-block: 6px; }
