@@ -60,9 +60,16 @@ collections:
       - { label: Sold, field: status, pattern: sold }
     fields:
       - name: image
-        label: Photo
+        label: Cover photo
         widget: image
         hint: "A straight-on photo in good daylight. Portrait (taller than wide) looks best."
+      - name: images
+        label: All photos
+        label_singular: photo
+        widget: list
+        required: false
+        hint: "Every photo of this piece, in order (up to 10). Buyers swipe through them. The cover photo is always shown first."
+        field: { name: photo, label: Photo, widget: image }
       - { name: title, label: Title, widget: string }
       - name: category
         label: Category
