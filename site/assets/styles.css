@@ -540,3 +540,11 @@ section { padding-block: clamp(48px, 8vw, 96px); }
   .top-nav .cart-btn { width: 44px; height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) { .cart-inner, .cart-body > *, .cart-line { animation: none !important; } }
+.how-pay { margin: 0; padding: 14px 16px 14px 34px; border-radius: 12px; background: var(--blush); display: grid; gap: 6px; font-size: .92rem; color: var(--mauve); }
+.how-pay b { color: var(--plum); font-weight: 600; }
+.btn.place, .btn.pay-now { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.place svg, .btn.pay-now svg { width: 18px; height: 18px; }
+.btn.place[disabled] { opacity: .6; cursor: progress; }
+.last-step { padding: 10px 14px; border-radius: 10px; background: #fff; color: var(--plum) !important; font-weight: 500; }
+.thanks.done .btn.pay-now { width: 100%; animation: pulseGlow 2.4s ease-in-out 1s 3; }
+@keyframes pulseGlow { 50% { box-shadow: 0 0 0 8px rgba(255, 196, 57, .25); } }

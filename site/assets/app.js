@@ -226,7 +226,16 @@
   const testParam = /[?&]test\b/.test(location.search);
   const cartTest = (() => { try { if (testParam) sessionStorage.setItem("sruthiarts.test", "1"); return sessionStorage.getItem("sruthiarts.test") === "1"; } catch { return testParam; } })();
   // In test mode (Studio → Settings) the cart only appears for people who open the site with ?test.
-  const cartOn = () => checkoutOn() && (!state.artist.checkoutTest || cartTest);
+  // Two ways to take payment: "paypalme" (customer pays the total on Sruthi's PayPal.me link, she confirms it in
+  // the studio) or "paypal" (automatic PayPal/card checkout; needs a PayPal Business app).
+  const payMode = () => (state.artist.checkoutMode === "paypal" ? "paypal" : "paypalme");
+  const paypalMeUser = () => (state.artist.paypal || "").replace(/^https?:\/\/(www\.)?paypal\.me\//i, "").replace(/^paypal\.me\//i, "").trim().replace(/^@/, "").replace(/[/?#].*$/, "");
+  const checkoutReady = () => {
+    const url = state.artist.checkoutApi || "";
+    if (!/^https:\/\//.test(url) || /paypal\.(me|com)/i.test(url)) return false;
+    return payMode() === "paypal" ? /^[A-Za-z0-9_-]{40,}$/.test(state.artist.paypalClientId || "") : Boolean(paypalMeUser());
+  };
+  const cartOn = () => checkoutReady() && (!state.artist.checkoutTest || cartTest);
   let cart = [];
   try { cart = (JSON.parse(localStorage.getItem(CART_KEY) || "[]") || []).filter((c) => c && typeof c.id === "string" && Number(c.qty) > 0); } catch { cart = []; }
   const findPiece = (id) => state.paintings.find((p) => p.id === id);
@@ -364,7 +373,7 @@
   function cartView(notes) {
     const lines = cartLines();
     const wrap = el("div", { class: "cart-view" });
-    if (state.artist.checkoutTest) wrap.append(el("p", { class: "test-banner", text: "Test mode: payments use PayPal's sandbox. No real money is charged." }));
+    if (state.artist.checkoutTest) wrap.append(el("p", { class: "test-banner", text: payMode() === "paypal" ? "Test mode: payments use PayPal's sandbox. No real money is charged." : "Test mode: only people using the ?test link see this cart." }));
     notes.forEach((n) => wrap.append(el("p", { class: "cart-note", text: n })));
     if (!lines.length) {
       wrap.append(el("div", { class: "cart-empty" },
@@ -389,7 +398,7 @@
     }));
     wrap.append(list, totalsBlock(false),
       el("button", { type: "button", class: "btn block", onclick: () => showStep("details") }, "Checkout"),
-      el("p", { class: "fine center", text: "Secure payment by PayPal: PayPal account or any debit or credit card." }));
+      el("p", { class: "fine center", text: "Pay securely on PayPal with your PayPal account or any debit or credit card." }));
     return wrap;
   }
 
@@ -467,6 +476,7 @@
   }
 
   function payView() {
+    if (payMode() === "paypalme") return payMeView();
     const lines = cartLines();
     const note = el("p", { class: "checkout-msg", role: "status" });
     const box = el("div", { class: "paypal-box" }, el("div", { class: "pp-skeleton" }, el("span"), el("span")));
@@ -516,6 +526,75 @@
       note.textContent = "Payment couldn't load. Check your connection and try again" + (igHandle() ? `, or message @${igHandle()} to order.` : ".");
     });
     return wrap;
+  }
+
+  // Shared summary of where it's going and what's in the cart.
+  function recapBlocks() {
+    const lines = cartLines();
+    return [
+      el("section", { class: "recap" },
+        el("div", { class: "recap-head" }, el("h3", { text: buyer.method === "pickup" ? "Pickup" : "Delivering to" }), el("button", { type: "button", class: "link", onclick: () => showStep("details") }, "Change")),
+        el("address", {}, addressLines().map((l) => el("span", { text: l }))),
+        el("p", { class: "recap-contact", text: [buyer.email.trim(), buyer.phone.trim()].filter(Boolean).join(" · ") })),
+      el("section", { class: "recap" },
+        el("div", { class: "recap-head" }, el("h3", { text: `${cartCount()} item${cartCount() > 1 ? "s" : ""}` }), el("button", { type: "button", class: "link", onclick: () => showStep("cart") }, "Edit")),
+        el("ul", { class: "recap-items" }, lines.map((c) => el("li", {}, el("img", { src: c.p.image, alt: "", width: "44", height: "55" }), el("span", { text: `${c.p.title} × ${c.qty}` }), el("b", { text: money(c.p.price * c.qty) }))))),
+    ];
+  }
+
+  // PayPal.me mode: save the order (pieces are reserved), then send the customer to pay the exact total.
+  function payMeView() {
+    const note = el("p", { class: "checkout-msg", role: "status" });
+    const total = cartSubtotal() + feeFor(buyer);
+    const place = el("button", { type: "button", class: "btn block paypal place" });
+    place.innerHTML = PP_ICON;
+    place.append(` Place order · ${money(total)} ${state.artist.currency || "CAD"}`);
+    place.addEventListener("click", async () => {
+      place.disabled = true; note.className = "checkout-msg"; note.textContent = "Saving your order…";
+      try {
+        const r = await postJson(api("/api/requests"), { items: cartLines().map((c) => ({ id: c.id, qty: c.qty })), delivery: deliveryPayload() });
+        orderSaved(r);
+      } catch (e) {
+        place.disabled = false; note.className = "checkout-msg error"; note.textContent = e.message;
+      }
+    });
+    return el("div", { class: "pay-view" },
+      state.artist.checkoutTest ? el("p", { class: "test-banner", text: "Test mode: only people using the ?test link see the cart. Test orders are real, so cancel them in the studio afterwards." }) : null,
+      ...recapBlocks(), totalsBlock(true),
+      el("ol", { class: "how-pay" },
+        el("li", {}, el("b", { text: "Place your order." }), " Your pieces are reserved for you."),
+        el("li", {}, el("b", { text: "Pay on PayPal." }), " We open Sruthi's PayPal page with the exact total filled in. Pay with your PayPal balance or a card."),
+        el("li", {}, el("b", { text: "Sruthi confirms" }), buyer.method === "pickup" ? " and messages you to arrange the pickup." : " and ships to your address.")),
+      place, note);
+  }
+
+  function orderSaved(r) {
+    (r.stock || []).forEach((s) => {
+      const i = state.paintings.findIndex((p) => p.id === s.id);
+      if (i >= 0 && typeof s.left === "number") state.paintings[i] = { ...state.paintings[i], quantity: s.left, status: s.left > 0 ? "available" : "sold" };
+    });
+    const first = (buyer.name.trim().split(/\s+/)[0]) || "";
+    cart = []; saveCart();
+    renderFilters(); renderWall();
+    cartStep = "done";
+    $("#cart-title").textContent = "Almost done";
+    $("#cart-back").hidden = true;
+    $("#cart-steps").hidden = true;
+    const pay = el("a", { class: "btn paypal block pay-now", href: r.payUrl, target: "_blank", rel: "noopener" });
+    pay.innerHTML = PP_ICON;
+    pay.append(` Pay ${money(Number(r.total))} ${r.currency || ""} on PayPal`);
+    $("#cart-body").replaceChildren(el("div", { class: "thanks done" },
+      el("div", { class: "tick", "aria-hidden": "true" }),
+      el("h3", { text: first ? `Thank you, ${first}!` : "Thank you!" }),
+      el("p", { class: "order-no" }, "Order ", el("b", { text: r.number }), " is saved and your pieces are reserved."),
+      el("ul", { class: "recap-items plain" }, (r.items || []).map((i) => el("li", { text: `${i.title} × ${i.qty}` }))),
+      el("p", { class: "last-step", text: "One last step: pay the total on PayPal. Please write your order number in the PayPal note so Sruthi can match your payment." }),
+      pay,
+      el("button", { type: "button", class: "link", onclick: async (e) => { try { await navigator.clipboard.writeText(r.number); e.currentTarget.textContent = "Order number copied ✓"; } catch {} } }, `Copy order number ${r.number}`),
+      el("p", { text: r.method === "pickup" ? "Once the payment arrives, Sruthi will message you to arrange the pickup." : "Once the payment arrives, Sruthi will pack and ship your order to the address you gave." }),
+      igHandle() ? el("p", {}, "Questions? Message ", el("a", { href: igUrl(), target: "_blank", rel: "noopener" }, `@${igHandle()}`), ` with order ${r.number}.`) : null,
+      el("button", { type: "button", class: "btn ghost", onclick: () => closeCart() }, "Keep browsing")));
+    petals();
   }
 
   function orderDone(r) {
