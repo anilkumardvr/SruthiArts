@@ -4,11 +4,12 @@
   "category": "originals",
   "description": "Soft pastel garden under a silver moon.",
   "price": 249,
-  "status": "available",
+  "status": "sold",
   "medium": "Acrylic on canvas",
   "width": 40,
   "height": 50,
   "alt": "A dark blue night garden with pale pink and lilac blooms beneath a large silver moon",
   "date": "2026-09-22T12:04",
-  "paypalLink": ""
+  "paypalLink": "",
+  "quantity": 0
 }
