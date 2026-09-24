@@ -15,20 +15,20 @@
     "heading": "How to buy",
     "steps": [
       {
-        "title": "Choose a piece",
-        "text": "Open anything marked Available to see its size, medium, price and how many are left."
+        "title": "Add to cart",
+        "text": "Open anything marked Available and tap “Add to cart”, or “Buy now” for a single piece."
       },
       {
-        "title": "Pay with PayPal",
-        "text": "Tap “Buy with PayPal” on the piece. The price is already filled in."
+        "title": "Enter your delivery details",
+        "text": "Add your name, email and address, or choose free pickup. The delivery fee is shown before you pay."
       },
       {
-        "title": "Send your payment details",
-        "text": "After paying, message @sruthi_artss on Instagram with the piece’s name, your PayPal transaction ID or a screenshot of the receipt, and your delivery address."
+        "title": "Pay on PayPal",
+        "text": "Place your order to reserve your pieces, then pay the exact total on PayPal with your PayPal account or any card. Add your order number in the PayPal note."
       },
       {
-        "title": "Get your confirmation",
-        "text": "Sruthi checks the payment, confirms your order and lets you know when it ships."
+        "title": "Sruthi ships it",
+        "text": "Once the payment arrives, Sruthi packs your order and ships it to you, or messages you to arrange the pickup."
       }
     ]
   },
