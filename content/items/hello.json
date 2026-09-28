@@ -4,12 +4,12 @@
   "category": "originals",
   "description": "Hello world",
   "price": 250,
-  "status": "sold",
+  "status": "available",
   "medium": "Acrylic on canvas",
   "width": 22,
   "height": 22,
   "alt": "Hello",
   "date": "2026-09-22T19:35:00",
   "paypalLink": "https://www.paypal.me/SruthirikaKoora",
-  "quantity": 0
+  "quantity": 1
 }
