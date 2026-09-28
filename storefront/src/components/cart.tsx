@@ -64,12 +64,11 @@ function StepsBar({ step }: { step: CartStep }) {
 
 // ---------- Step 1: cart ----------
 function CartView() {
-  const { shop, money, lines, cartNotes, setQty, removeLine, closeCart, setCartStep } = useStore();
+  const { shop, money, lines, setQty, removeLine, closeCart, setCartStep } = useStore();
   const a = shop.artist;
   return (
     <div className="space-y-4">
       {a.checkoutTest && <TestBanner>{payMode(a) === "paypal" ? "Test mode: payments use PayPal's sandbox. No real money is charged." : "Test mode: only people using the ?test link see this cart."}</TestBanner>}
-      {cartNotes.map((n) => <p key={n} className="bg-secondary text-secondary-foreground rounded-xl px-3.5 py-2.5 text-sm">{n}</p>)}
       {!lines.length ? (
         <div className="flex flex-col items-center gap-2 py-10 text-center">
           <div className="bg-secondary text-primary mb-2 grid size-16 place-items-center rounded-full"><ShoppingBag className="size-7" strokeWidth={1.5} /></div>
@@ -408,7 +407,7 @@ function DoneView({ done }: { done: Done }) {
 
 // ---------- Panel ----------
 export function CartPanel() {
-  const { shop, cartOpen, cartStep, closeCart, setCartStep, clearCart, applyStock } = useStore();
+  const { shop, cartOpen, cartStep, cartNotes, closeCart, setCartStep, clearCart, applyStock } = useStore();
   const isPhone = useIsPhone();
   const [done, setDone] = React.useState<Done | null>(null);
   const bodyRef = React.useRef<HTMLDivElement>(null);
@@ -436,6 +435,11 @@ export function CartPanel() {
       {cartStep !== "done" && <StepsBar step={cartStep} />}
       <Separator />
       <div ref={bodyRef} className="flex-1 overflow-y-auto overscroll-contain px-5 pt-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        {cartStep !== "done" && cartNotes.length > 0 && (
+          <div role="status" className="mb-4 grid gap-2">
+            {cartNotes.map((n) => <p key={n} className="bg-secondary text-secondary-foreground rounded-xl px-3.5 py-2.5 text-sm">{n}</p>)}
+          </div>
+        )}
         {cartStep === "cart" && <CartView />}
         {cartStep === "details" && <DetailsView />}
         {cartStep === "pay" && (payMode(shop.artist) === "paypal" ? <PayPalView onDone={finish} /> : <PayMeView onDone={finish} />)}

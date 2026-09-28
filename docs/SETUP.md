@@ -97,6 +97,20 @@ Instead of pasting a token:
 3. The studio login page now shows **Continue with GitHub**. The account must be a collaborator on the repo.
 4. The classic editor can use the same login: add `base_url: https://<your worker address>` under `backend:` in `site/admin/classic/config.yml`.
 
+## 8. Optional: move the Worker to api.sruthiarts.com
+
+The Worker works at its `*.workers.dev` address, but a custom domain looks tidier and turns on Cloudflare's edge cache for live stock (`/api/stock`). On `workers.dev` the Worker still caches stock for 10 seconds in memory, so this is optional. `sruthiarts.com` must already be in the same Cloudflare account ([DOMAIN.md](DOMAIN.md)).
+
+1. Add the domain, either way:
+   - **Dashboard:** Worker → **Settings → Domains & Routes → Add → Custom domain**, enter `api.sruthiarts.com`. Cloudflare creates the DNS record and certificate.
+   - **Command line:** in `worker/wrangler.toml`, uncomment the `routes` block with `api.sruthiarts.com`, then `npx wrangler deploy` (or push, and `.github/workflows/worker.yml` deploys it).
+2. Open `https://api.sruthiarts.com/`. It should show the same health check as the old address.
+3. **Studio → Settings → Checkout → Checkout server URL**: change it to `https://api.sruthiarts.com`, **Save settings**, then **Test connection**. The shop uses the new address after the next deploy (about a minute).
+4. If you set up "Continue with GitHub" (step 7), change the OAuth App's callback URL to `https://api.sruthiarts.com/callback`, and any `base_url` in `site/admin/classic/config.yml`.
+5. Leave the `workers.dev` address switched on for a day, so pages that are already open keep working. Then you can turn it off under **Settings → Domains & Routes**.
+
+`ALLOWED_ORIGINS` doesn't change: it lists the shop's address, not the Worker's.
+
 ## Troubleshooting
 
 | What you see | What to check |

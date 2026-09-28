@@ -41,7 +41,7 @@ type Store = {
   cartOpen: boolean;
   cartStep: CartStep;
   cartNotes: string[];
-  openCart: (step?: CartStep) => Promise<void>;
+  openCart: (step?: CartStep) => void;
   closeCart: () => void;
   setCartStep: (s: CartStep) => void;
   buyer: Buyer;
@@ -58,7 +58,7 @@ export const useStore = () => {
 
 export function StoreProvider({ initial, children }: { initial: Shop; children: React.ReactNode }) {
   const [shop, setShop] = React.useState(initial);
-  // Latest paintings, updated synchronously so openCart can reconcile right after a live stock refresh.
+  // Latest paintings, updated synchronously so the cart can reconcile right after a live stock refresh.
   const paintingsRef = React.useRef(initial.paintings);
   const [cart, setCartState] = React.useState<CartItem[]>(loadCart);
   // Every change goes through here so handlers that run back to back (Buy now = add, then open) see the latest cart.
@@ -116,10 +116,13 @@ export function StoreProvider({ initial, children }: { initial: Shop; children: 
     return { next, notes };
   }, []);
 
-  const openPiece = React.useCallback((idx: number) => { setCartOpen(false); setCurrent(idx); }, []);
   const closePiece = React.useCallback(() => setCurrent(-1), []);
 
+  // Bumped on every open and close, so a late stock answer only touches the cart session that asked for it.
+  const cartSeq = React.useRef(0);
+  const openPiece = React.useCallback((idx: number) => { cartSeq.current++; setCartOpen(false); setCurrent(idx); }, []);
   const closeCart = React.useCallback(() => {
+    cartSeq.current++;
     setCartOpen(false);
     // After an order the panel starts fresh next time.
     setCartStep((s) => (s === "done" ? "cart" : s));
@@ -150,15 +153,25 @@ export function StoreProvider({ initial, children }: { initial: Shop; children: 
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refreshStock, reconcile, setCart]);
 
-  const openCart = React.useCallback(async (step: CartStep = "cart") => {
+  // Opens straight away with the stock already on the page, then checks live stock in the background and
+  // reconciles again, adding any notes, if this same cart session is still open when the answer arrives.
+  const openCart = React.useCallback((step: CartStep = "cart") => {
     if (!cartEnabled) return;
-    const ps = await refreshStock();
-    const { next, notes } = reconcile(ps, cartRef.current);
+    const seq = ++cartSeq.current;
+    const { next, notes } = reconcile(paintingsRef.current, cartRef.current);
     setCart(next);
     setCartNotes(notes);
     setCartStep(next.length ? step : "cart");
     setCurrent(-1);
     setCartOpen(true);
+    refreshStock().then((ps) => {
+      if (cartSeq.current !== seq) return; // closed or reopened since
+      const later = reconcile(ps, cartRef.current);
+      if (!later.notes.length) return;
+      setCart(later.next);
+      setCartNotes((ns) => [...ns, ...later.notes.filter((n) => !ns.includes(n))]);
+      if (!later.next.length) setCartStep((s) => (s === "done" ? s : "cart"));
+    });
   }, [cartEnabled, refreshStock, reconcile, setCart]);
 
   // Show the new stock straight away; the site itself refreshes about a minute later.

@@ -7,7 +7,7 @@
 //   POST /api/orders/:id/capture     Take the payment, lower each item's quantity in the repo (Sold at 0),
 //                                    save the order with the delivery address, and send Sruthi a WhatsApp alert.
 //   GET  /api/stock                  Public live stock: { items: { [id]: { quantity, status, price } } } read from
-//                                    content/items/*.json in one GitHub GraphQL call, cached at the edge for 10 seconds.
+//                                    content/items/*.json in one GitHub GraphQL call, cached for 10 seconds (memory + edge).
 //   GET  /api/admin/orders           Orders list for the admin (GitHub login required).
 //   PATCH /api/admin/orders/:key     Update an order: status (awaiting/new/packed/shipped/cancelled), tracking, note.
 //   GET  /auth, /callback            "Continue with GitHub" login for the admin (Decap/Sveltia-compatible).
@@ -113,8 +113,8 @@ async function changeStock(env, id, delta, message) {
 
 // ---------- Live stock ----------
 // Lets the shop show Studio changes to stock, sold/available and price within seconds, without waiting for a deploy.
-// One GraphQL call returns every item file's text; the response is cached at the edge so GitHub sees at most one
-// request per 10 seconds per Cloudflare location.
+// One GraphQL call returns every item file's text; the response is cached for 10 seconds (see stockResponse) so
+// GitHub sees at most one request per 10 seconds per Worker isolate.
 const STOCK_TTL = 10;
 const STOCK_QUERY = `query($owner: String!, $name: String!, $expr: String!) {
   repository(owner: $owner, name: $name) { object(expression: $expr) { ... on Tree { entries { name object { ... on Blob { text } } } } } }
@@ -143,19 +143,25 @@ async function readStock(env) {
   }
   return { items };
 }
+// Two cache layers, both 10 seconds. The Cache API (caches.default) does nothing on *.workers.dev addresses, only on a
+// custom domain, so a copy is also kept in this isolate's memory. Each Cloudflare isolate has its own copy.
+let stockMemo = null; // { at: ms timestamp, body: JSON text }
 async function stockResponse(env, request, ctx) {
+  const fresh = (body) => new Response(body, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": `public, max-age=${STOCK_TTL}` } });
+  if (stockMemo && Date.now() - stockMemo.at < STOCK_TTL * 1000) return fresh(stockMemo.body);
   const cache = caches.default;
   const key = new Request(new URL("/api/stock", request.url).toString(), { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return new Response(hit.body, hit);
-  let data;
+  let body;
   try {
-    data = await readStock(env);
+    body = JSON.stringify(await readStock(env));
   } catch (e) {
     console.log("stock failed", e.message);
     return new Response(null, { status: 503, headers: { "cache-control": "no-store" } });
   }
-  const res = json(data, 200, { "cache-control": `public, max-age=${STOCK_TTL}` });
+  stockMemo = { at: Date.now(), body };
+  const res = fresh(body);
   ctx.waitUntil(cache.put(key, res.clone()));
   return res;
 }

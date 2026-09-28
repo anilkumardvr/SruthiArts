@@ -4,6 +4,13 @@ name = "sruthiarts-checkout"
 main = "worker.js"
 compatibility_date = "2026-09-01"
 
+# Optional: serve the Worker from api.sruthiarts.com instead of *.workers.dev (see docs/SETUP.md, step 8).
+# The edge cache for /api/stock only works on a custom domain. sruthiarts.com must be a zone in this Cloudflare
+# account; wrangler then creates the DNS record and certificate. Uncomment, deploy, then update Studio → Settings.
+# routes = [
+#   { pattern = "api.sruthiarts.com", custom_domain = true },
+# ]
+
 [vars]
 ALLOWED_ORIGINS = "https://www.sruthiarts.com,https://sruthiarts.com,https://anilkumardvr.github.io"
 GITHUB_REPO = "anilkumardvr/SruthiArts"

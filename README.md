@@ -53,7 +53,7 @@ Setup steps: [docs/SETUP.md](docs/SETUP.md).
 
 ### What shows up right away, and what waits for a deploy
 
-Every Studio save is a commit, and GitHub Actions rebuilds and redeploys the site in about a minute. With the checkout server set up (**Settings → Checkout server URL**), the shop also asks the server for live stock (`GET /api/stock`) when the page loads, when a visitor comes back to the tab, and before the cart opens. So some changes show up much sooner:
+Every Studio save is a commit, and GitHub Actions rebuilds and redeploys the site in about a minute. With the checkout server set up (**Settings → Checkout server URL**), the shop also asks the server for live stock (`GET /api/stock`) when the page loads, when a visitor comes back to the tab, and when the cart opens (the cart shows straight away and updates if anything changed). So some changes show up much sooner:
 
 | Studio change | Shows on the site |
 | --- | --- |
