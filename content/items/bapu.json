@@ -10,7 +10,7 @@
   "width": 1,
   "height": 1,
   "price": 5,
-  "quantity": 1,
-  "status": "available",
+  "quantity": 0,
+  "status": "sold",
   "date": "2026-09-27T22:21:50"
 }
