@@ -101,7 +101,7 @@ export function Hero() {
         ))}
       </div>
       <div>
-        <Badge variant="secondary" className="mb-5 px-3 py-1 text-[11px] tracking-[0.16em] uppercase">{text(hero.eyebrow, DEFAULT_PAGES.hero.eyebrow)}</Badge>
+        <Badge variant="secondary" className="mb-5 h-auto max-w-full px-3 py-1 text-[11px] leading-relaxed tracking-[0.16em] whitespace-normal uppercase">{text(hero.eyebrow, DEFAULT_PAGES.hero.eyebrow)}</Badge>
         <h1 id="hero-title" className="text-[clamp(2.4rem,6vw+.25rem,4.2rem)] leading-[1.05]">
           <Rise words={title} start={0} /> <em className="text-primary italic"><Rise words={accent} start={title.split(/\s+/).length} /></em>
         </h1>
