@@ -6,6 +6,8 @@
 //   POST /api/requests               PayPal.me mode: save the order + address, reserve the pieces, return the pay link.
 //   POST /api/orders/:id/capture     Take the payment, lower each item's quantity in the repo (Sold at 0),
 //                                    save the order with the delivery address, and send Sruthi a WhatsApp alert.
+//   GET  /api/stock                  Public live stock: { items: { [id]: { quantity, status, price } } } read from
+//                                    content/items/*.json in one GitHub GraphQL call, cached at the edge for 10 seconds.
 //   GET  /api/admin/orders           Orders list for the admin (GitHub login required).
 //   PATCH /api/admin/orders/:key     Update an order: status (awaiting/new/packed/shipped/cancelled), tracking, note.
 //   GET  /auth, /callback            "Continue with GitHub" login for the admin (Decap/Sveltia-compatible).
@@ -107,6 +109,55 @@ async function changeStock(env, id, delta, message) {
     await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
   }
   return { ok: false, error: "Could not update stock after several tries" };
+}
+
+// ---------- Live stock ----------
+// Lets the shop show Studio changes to stock, sold/available and price within seconds, without waiting for a deploy.
+// One GraphQL call returns every item file's text; the response is cached at the edge so GitHub sees at most one
+// request per 10 seconds per Cloudflare location.
+const STOCK_TTL = 10;
+const STOCK_QUERY = `query($owner: String!, $name: String!, $expr: String!) {
+  repository(owner: $owner, name: $name) { object(expression: $expr) { ... on Tree { entries { name object { ... on Blob { text } } } } } }
+}`;
+async function readStock(env) {
+  const [owner, name] = String(env.GITHUB_REPO || "").split("/");
+  if (!owner || !name || !env.GITHUB_TOKEN) throw new Error("stock: GITHUB_REPO or GITHUB_TOKEN not set");
+  const res = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.GITHUB_TOKEN}`, "content-type": "application/json", "user-agent": "sruthiarts-checkout" },
+    body: JSON.stringify({ query: STOCK_QUERY, variables: { owner, name, expr: `${env.GITHUB_BRANCH || "main"}:content/items` } }),
+  });
+  if (!res.ok) throw new Error(`stock: GitHub GraphQL ${res.status}`);
+  const body = await res.json();
+  const entries = body && body.data && body.data.repository && body.data.repository.object && body.data.repository.object.entries;
+  if (body.errors || !Array.isArray(entries)) throw new Error(`stock: GitHub GraphQL returned ${JSON.stringify(body.errors || "no tree").slice(0, 300)}`);
+  const items = {};
+  for (const e of entries) {
+    const id = String(e.name || "").replace(/\.json$/, "");
+    if (!e.name.endsWith(".json") || !/^[a-z0-9-]{1,80}$/.test(id) || !e.object || typeof e.object.text !== "string") continue;
+    let item;
+    try { item = JSON.parse(e.object.text); } catch { continue; } // a half-saved file: the shop keeps its built value
+    // Same rule as scripts/build-data.mjs: quantity defaults to 1; status "sold" means 0 left.
+    const quantity = stockOf(item);
+    items[id] = { quantity, status: quantity > 0 ? "available" : "sold", price: Number(item.price) };
+  }
+  return { items };
+}
+async function stockResponse(env, request, ctx) {
+  const cache = caches.default;
+  const key = new Request(new URL("/api/stock", request.url).toString(), { method: "GET" });
+  const hit = await cache.match(key);
+  if (hit) return new Response(hit.body, hit);
+  let data;
+  try {
+    data = await readStock(env);
+  } catch (e) {
+    console.log("stock failed", e.message);
+    return new Response(null, { status: 503, headers: { "cache-control": "no-store" } });
+  }
+  const res = json(data, 200, { "cache-control": `public, max-age=${STOCK_TTL}` });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
 }
 
 // ---------- PayPal ----------
@@ -487,6 +538,8 @@ export default {
       } else if (m && request.method === "POST") {
         if (!allowedOrigin(env, request)) throw new HttpError(403, "Not allowed.", "origin");
         res = await captureOrder(env, m[1], ctx);
+      } else if (url.pathname === "/api/stock" && request.method === "GET") {
+        res = await stockResponse(env, request, ctx);
       } else if (url.pathname === "/api/admin/orders" && request.method === "GET") {
         await requireAdmin(env, request);
         res = await listOrders(env);

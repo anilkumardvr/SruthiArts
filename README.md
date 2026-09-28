@@ -27,7 +27,7 @@ scripts/validate.mjs      checks run before every deploy
 .github/workflows/pages.yml
 ```
 
-Pushing to `main` builds `shop.json`, runs the checks, builds the storefront into `storefront/dist/` (with `site/admin`, `site/images` and `data/shop.json` copied in) and, if everything passes, deploys it to GitHub Pages. Pull requests run the checks and the build only.
+Pushing to `main` runs one job that builds `shop.json`, runs the checks, builds the storefront into `storefront/dist/` (with `site/admin`, `site/images` and `data/shop.json` copied in) and, if everything passes, deploys it to GitHub Pages. Pull requests run the checks and the build only.
 
 ## Studio (admin)
 
@@ -50,6 +50,19 @@ Each save is a commit to `main`. The top bar shows **Publishing…** and then **
 Each item has a **quantity**. The shop shows "N available" or "Sold out". With checkout switched on, a PayPal purchase lowers the quantity automatically and marks the item Sold at 0, the order appears in the studio, and Sruthi gets a WhatsApp alert. Until then, buyers use the PayPal.me link or Instagram, and stock is updated by hand in the studio.
 
 Setup steps: [docs/SETUP.md](docs/SETUP.md).
+
+### What shows up right away, and what waits for a deploy
+
+Every Studio save is a commit, and GitHub Actions rebuilds and redeploys the site in about a minute. With the checkout server set up (**Settings → Checkout server URL**), the shop also asks the server for live stock (`GET /api/stock`) when the page loads, when a visitor comes back to the tab, and before the cart opens. So some changes show up much sooner:
+
+| Studio change | Shows on the site |
+| --- | --- |
+| Stock (the + / − buttons), marking sold, relisting | Within about 10 seconds |
+| Price | Within about 10 seconds |
+| Text, captions, sizes, categories, page text, settings | After the deploy (about a minute) |
+| New posts, deleted posts, photos | After the deploy (about a minute) |
+
+The server keeps its answer for 10 seconds, so a change can take that long to appear. A new post only appears once the deploy has published its photos and text. If the server can't be reached, the shop quietly uses the stock from the last deploy.
 
 ## Editing by hand
 

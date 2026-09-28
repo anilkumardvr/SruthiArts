@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { type Buyer, type Painting, type Shop, cartOn as cartOnFor, emptyBuyer, makeMoney, stockOf } from "@/lib/shop";
+import { type Buyer, type Painting, type Shop, cartOn as cartOnFor, emptyBuyer, fetchStock, makeMoney, mergeStock, stockOf } from "@/lib/shop";
 
 // The cart lives in this browser only (localStorage). Prices, stock and delivery fees are checked again by the
 // checkout server, so nothing here decides what a buyer pays.
@@ -41,7 +41,7 @@ type Store = {
   cartOpen: boolean;
   cartStep: CartStep;
   cartNotes: string[];
-  openCart: (step?: CartStep) => void;
+  openCart: (step?: CartStep) => Promise<void>;
   closeCart: () => void;
   setCartStep: (s: CartStep) => void;
   buyer: Buyer;
@@ -58,6 +58,8 @@ export const useStore = () => {
 
 export function StoreProvider({ initial, children }: { initial: Shop; children: React.ReactNode }) {
   const [shop, setShop] = React.useState(initial);
+  // Latest paintings, updated synchronously so openCart can reconcile right after a live stock refresh.
+  const paintingsRef = React.useRef(initial.paintings);
   const [cart, setCartState] = React.useState<CartItem[]>(loadCart);
   // Every change goes through here so handlers that run back to back (Buy now = add, then open) see the latest cart.
   const cartRef = React.useRef(cart);
@@ -114,22 +116,8 @@ export function StoreProvider({ initial, children }: { initial: Shop; children: 
     return { next, notes };
   }, []);
 
-  React.useEffect(() => {
-    setCart((cs) => reconcile(initial.paintings, cs).next);
-  }, [initial.paintings, reconcile, setCart]);
-
   const openPiece = React.useCallback((idx: number) => { setCartOpen(false); setCurrent(idx); }, []);
   const closePiece = React.useCallback(() => setCurrent(-1), []);
-
-  const openCart = React.useCallback((step: CartStep = "cart") => {
-    if (!cartEnabled) return;
-    setCurrent(-1);
-    const { next, notes } = reconcile(shop.paintings, cartRef.current);
-    setCart(next);
-    setCartNotes(notes);
-    setCartStep(next.length ? step : "cart");
-    setCartOpen(true);
-  }, [cartEnabled, reconcile, shop.paintings, setCart]);
 
   const closeCart = React.useCallback(() => {
     setCartOpen(false);
@@ -138,7 +126,40 @@ export function StoreProvider({ initial, children }: { initial: Shop; children: 
     setCartNotes([]);
   }, []);
 
-  const setPaintings = React.useCallback((fn: (ps: Painting[]) => Painting[]) => setShop((s) => ({ ...s, paintings: fn(s.paintings) })), []);
+  const setPaintings = React.useCallback((fn: (ps: Painting[]) => Painting[]) => {
+    const ps = fn(paintingsRef.current);
+    if (ps === paintingsRef.current) return;
+    paintingsRef.current = ps;
+    setShop((s) => ({ ...s, paintings: ps }));
+  }, []);
+
+  // Live stock: once after load, whenever the tab comes back into view, and before the cart opens.
+  // The cart is reconciled after the first refresh (against shop.json if the server can't be reached), never
+  // against shop.json alone first, which could drop pieces that are back in stock since the last deploy.
+  const artist = shop.artist;
+  const refreshStock = React.useCallback(async () => {
+    const live = await fetchStock(artist);
+    if (live) setPaintings((ps) => mergeStock(ps, live));
+    return paintingsRef.current;
+  }, [artist, setPaintings]);
+
+  React.useEffect(() => {
+    refreshStock().then((ps) => setCart((cs) => reconcile(ps, cs).next));
+    const onVisible = () => { if (document.visibilityState === "visible") refreshStock(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshStock, reconcile, setCart]);
+
+  const openCart = React.useCallback(async (step: CartStep = "cart") => {
+    if (!cartEnabled) return;
+    const ps = await refreshStock();
+    const { next, notes } = reconcile(ps, cartRef.current);
+    setCart(next);
+    setCartNotes(notes);
+    setCartStep(next.length ? step : "cart");
+    setCurrent(-1);
+    setCartOpen(true);
+  }, [cartEnabled, refreshStock, reconcile, setCart]);
 
   // Show the new stock straight away; the site itself refreshes about a minute later.
   const applyStock = React.useCallback((stock?: { id: string; left: number }[]) => {

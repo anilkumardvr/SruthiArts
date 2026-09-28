@@ -107,12 +107,48 @@ export function paypalUrl(a: Artist, p: Painting) {
 // Two ways to take payment: "paypalme" (customer pays the total on Sruthi's PayPal.me link, she confirms it in
 // the studio) or "paypal" (automatic PayPal/card checkout; needs a PayPal Business app).
 export const payMode = (a: Artist) => (a.checkoutMode === "paypal" ? "paypal" : "paypalme");
+// The checkout server (Cloudflare Worker) address, when one is set and looks right.
+const validCheckoutApi = (a: Artist) => { const url = a.checkoutApi || ""; return /^https:\/\//.test(url) && !/paypal\.(me|com)/i.test(url); };
 export function checkoutReady(a: Artist) {
-  const url = a.checkoutApi || "";
-  if (!/^https:\/\//.test(url) || /paypal\.(me|com)/i.test(url)) return false;
+  if (!validCheckoutApi(a)) return false;
   return payMode(a) === "paypal" ? /^[A-Za-z0-9_-]{40,}$/.test(a.paypalClientId || "") : Boolean(cleanPaypalUser(a.paypal));
 }
 export const api = (a: Artist, path: string) => (a.checkoutApi || "").replace(/\/+$/, "") + path;
+
+// Live stock from the checkout server (GET /api/stock), so Studio changes to stock, sold/available and price show
+// within seconds instead of after the next deploy. Returns null on any problem; the shop.json values then stay.
+export type LiveStock = Record<string, { quantity: number; status: "available" | "sold"; price: number }>;
+export async function fetchStock(a: Artist, timeoutMs = 2500): Promise<LiveStock | null> {
+  if (!validCheckoutApi(a)) return null;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    // "no-cache" skips the browser copy, so the only delay is the server's 10-second edge cache.
+    const res = await fetch(api(a, "/api/stock"), { signal: ctl.signal, cache: "no-cache" });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body && typeof body.items === "object" && body.items ? (body.items as LiveStock) : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+// Items only in the live data (posted since the last deploy) are skipped until the next deploy brings their photos and text.
+export function mergeStock(ps: Painting[], live: LiveStock): Painting[] {
+  let changed = false;
+  const next = ps.map((p) => {
+    const s = live[p.id];
+    if (!s || typeof s !== "object") return p;
+    const quantity = Number.isFinite(Number(s.quantity)) ? Math.max(0, Math.floor(Number(s.quantity))) : p.quantity;
+    const status = quantity === 0 || s.status === "sold" ? "sold" : "available";
+    const price = Number.isFinite(Number(s.price)) && Number(s.price) >= 0 ? Number(s.price) : p.price;
+    if (quantity === p.quantity && status === p.status && price === p.price) return p;
+    changed = true;
+    return { ...p, quantity: status === "sold" ? 0 : quantity, status, price } as Painting;
+  });
+  return changed ? next : ps;
+}
 
 // In test mode (Studio → Settings) the cart only appears for people who open the site with ?test.
 const testParam = /[?&]test\b/.test(location.search);
