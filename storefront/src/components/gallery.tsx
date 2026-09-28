@@ -4,19 +4,20 @@ import { Copy as CopyIcon } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Badge } from "@/components/ui/badge";
 import { FadeImage } from "@/components/fade-image";
-import { categoriesOf, igHandle, igUrl, isSold, photosOf, reduceMotion, spec, stockLabel } from "@/lib/shop";
+import { categoriesOf, igHandle, igUrl, isAuction, isSold, photosOf, reduceMotion, spec, stockLabel } from "@/lib/shop";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/store";
 
 export function Gallery() {
   const { shop, money, openPiece } = useStore();
   const [filter, setFilter] = React.useState("all");
-  const ps = shop.paintings;
+  // Auction pieces are shown in the Auctions section instead.
+  const ps = shop.paintings.filter((p) => !isAuction(p));
   const count = (id: string) => (id === "all" ? ps.length : ps.filter((p) => p.category === id).length);
   // "All" plus every category that has something in it; an empty category's button is hidden.
   const categories = [{ id: "all", label: "All" }, ...categoriesOf(shop.artist).filter((c) => count(c.id) > 0)];
   React.useEffect(() => { if (filter !== "all" && !count(filter)) setFilter("all"); }); // its last piece was removed
-  const list = ps.map((p, idx) => ({ p, idx })).filter(({ p }) => filter === "all" || p.category === filter);
+  const list = shop.paintings.map((p, idx) => ({ p, idx })).filter(({ p }) => !isAuction(p) && (filter === "all" || p.category === filter));
   const ig = igHandle(shop.artist);
 
   // Framed pieces lean toward the cursor.

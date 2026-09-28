@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { FadeImage } from "@/components/fade-image";
 import { InstagramIcon, PayPalIcon } from "@/components/icons";
 import { Stepper } from "@/components/stepper";
-import { type Painting, igHandle, igUrl, isSold, mailto, paypalUrl, photosOf, spec, stockLabel, stockOf } from "@/lib/shop";
+import { type Painting, igHandle, igUrl, isAuction, isSold, mailto, paypalUrl, photosOf, spec, stockLabel, stockOf } from "@/lib/shop";
 import { cn } from "@/lib/utils";
 import { useIsPhone } from "@/hooks/use-media-query";
 import { useStore } from "@/store";
@@ -118,10 +118,18 @@ function CartBlock({ p }: { p: Painting }) {
 }
 
 function Actions({ p }: { p: Painting }) {
-  const { shop, money, cartEnabled } = useStore();
+  const { shop, money, cartEnabled, closePiece } = useStore();
   const a = shop.artist;
   const ig = igHandle(a);
   const fine = "text-muted-foreground text-[13px] leading-relaxed";
+  if (isAuction(p)) {
+    return (
+      <div className="grid gap-2">
+        <Button size="lg" onClick={() => { closePiece(); setTimeout(() => dispatchEvent(new CustomEvent("open-auction", { detail: p.id })), 250); }}>Bid in the auction</Button>
+        <p className={fine}>This piece is sold by timed auction to the highest bidder.</p>
+      </div>
+    );
+  }
   if (isSold(p)) {
     return ig ? <p className={fine}>Love this one? <a className="text-primary underline underline-offset-4" href={igUrl(a)} target="_blank" rel="noopener">Message @{ig}</a> about similar pieces or a commission.</p> : null;
   }
@@ -202,7 +210,7 @@ export function Viewer() {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
         <DrawerContent>
-          <div className="overflow-y-auto overscroll-contain">
+          <div className="min-h-0 overflow-y-auto overscroll-contain">
             {piece && <ViewerBody p={piece} onStep={step} Title={DrawerTitle} Description={DrawerDescription} />}
           </div>
         </DrawerContent>
