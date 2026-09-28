@@ -1,0 +1,118 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Sruthi Arts — blush pink theme on shadcn/ui tokens.
+   Petal-pink ground, plum ink, berry for actions, rose-gold fillets around every piece. */
+:root {
+  color-scheme: light;
+  --radius: 1rem;
+  --background: #fff4f6;        /* blush: page ground */
+  --foreground: #3b1d2c;        /* plum: primary text */
+  --card: #ffffff;
+  --card-foreground: #3b1d2c;
+  --popover: #ffffff;
+  --popover-foreground: #3b1d2c;
+  --primary: #a8325e;           /* berry: buttons, links, prices (AA on blush and white) */
+  --primary-foreground: #fff7f9;
+  --secondary: #fde6ec;         /* petal: tinted bands, chips */
+  --secondary-foreground: #6d2143;
+  --muted: #fbeef2;
+  --muted-foreground: #7a5667;  /* mauve: secondary text */
+  --accent: #fde6ec;
+  --accent-foreground: #a8325e;
+  --destructive: #b42318;
+  --border: rgba(59, 29, 44, 0.12);
+  --input: rgba(59, 29, 44, 0.18);
+  --ring: #e0789c;              /* rose */
+  --rose: #e0789c;
+  --rosegold: #c8927a;
+  --success: #2f8a5b;           /* leaf: in stock */
+  --plum: #3b1d2c;
+}
+
+@theme inline {
+  --font-display: "Playfair Display", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Jost", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-wordmark: "Italiana", "Playfair Display", Georgia, serif;
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-rose: var(--rose);
+  --color-rosegold: var(--rosegold);
+  --color-success: var(--success);
+  --color-plum: var(--plum);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { scroll-behavior: smooth; scroll-padding-top: 80px; -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background:
+      radial-gradient(900px 560px at 88% -8%, rgba(224, 120, 156, 0.16), transparent 62%),
+      radial-gradient(700px 520px at -12% 28%, rgba(200, 146, 122, 0.1), transparent 60%),
+      var(--background);
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1, h2 { @apply font-display font-normal; text-wrap: balance; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+}
+
+/* A painting in its frame: white mat inside a thin rose-gold fillet. */
+.frame {
+  background: var(--card);
+  padding: 7%;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--rosegold) 55%, transparent), 0 1px 2px rgba(59, 29, 44, 0.06), 0 18px 40px -18px rgba(168, 50, 94, 0.35);
+  transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.35s;
+}
+.frame img { aspect-ratio: 4 / 5; width: 100%; object-fit: cover; background: var(--muted); }
+
+.fade-img { opacity: 0; transition: opacity 0.45s ease; }
+.fade-img.is-loaded { opacity: 1; }
+
+/* Headline words rise in one by one. */
+@keyframes rise { from { opacity: 0; transform: translateY(0.45em); } to { opacity: 1; transform: none; } }
+.rise-word { display: inline-block; animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--d) * 70ms + 80ms); }
+
+@keyframes card-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.card-in { animation: card-in 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i) * 45ms); }
+
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.18); } 100% { transform: scale(1); } }
+.bump { animation: bump 0.4s cubic-bezier(0.34, 1.4, 0.64, 1); }
+
+@keyframes sparkle { 0%, 100% { opacity: 0; transform: scale(0.4); } 50% { opacity: 1; transform: scale(1); } }
+.sparkle { position: absolute; width: 6px; height: 6px; border-radius: 999px; background: var(--rose); box-shadow: 0 0 12px var(--rose); animation: sparkle 3.2s ease-in-out infinite; }
+
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.reveal.is-in { opacity: 1; transform: none; }
+
+@keyframes tick-in { from { stroke-dashoffset: 30; } to { stroke-dashoffset: 0; } }
+.tick path { stroke-dasharray: 30; animation: tick-in 0.5s 0.15s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-word, .card-in, .bump, .sparkle, .tick path { animation: none !important; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .fade-img { transition: none; }
+}
+
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
