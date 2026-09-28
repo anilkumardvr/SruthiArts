@@ -4,7 +4,7 @@ import { Copy as CopyIcon } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Badge } from "@/components/ui/badge";
 import { FadeImage } from "@/components/fade-image";
-import { CATEGORIES, igHandle, igUrl, isSold, photosOf, reduceMotion, spec, stockLabel } from "@/lib/shop";
+import { categoriesOf, igHandle, igUrl, isSold, photosOf, reduceMotion, spec, stockLabel } from "@/lib/shop";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/store";
 
@@ -13,6 +13,9 @@ export function Gallery() {
   const [filter, setFilter] = React.useState("all");
   const ps = shop.paintings;
   const count = (id: string) => (id === "all" ? ps.length : ps.filter((p) => p.category === id).length);
+  // "All" plus every category that has something in it; an empty category's button is hidden.
+  const categories = [{ id: "all", label: "All" }, ...categoriesOf(shop.artist).filter((c) => count(c.id) > 0)];
+  React.useEffect(() => { if (filter !== "all" && !count(filter)) setFilter("all"); }); // its last piece was removed
   const list = ps.map((p, idx) => ({ p, idx })).filter(({ p }) => filter === "all" || p.category === filter);
   const ig = igHandle(shop.artist);
 
@@ -37,7 +40,7 @@ export function Gallery() {
           variant="outline"
           className="no-scrollbar -mx-4 w-auto max-w-[100vw] overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0"
         >
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <ToggleGroupItem
               key={c.id}
               value={c.id}
@@ -54,7 +57,7 @@ export function Gallery() {
       <ul key={filter} aria-live="polite" className="grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-7 sm:gap-y-12 md:grid-cols-3 lg:grid-cols-4">
         {!list.length && (
           <li className="text-muted-foreground col-span-full rounded-2xl border border-dashed p-10 text-center">
-            <p>No {(CATEGORIES.find((c) => c.id === filter)?.label || "pieces").toLowerCase()} listed right now.</p>
+            <p>No {filter === "all" ? "pieces" : (categories.find((c) => c.id === filter)?.label || "pieces").toLowerCase()} listed right now.</p>
             {ig && <p className="mt-1"><a className="text-primary underline underline-offset-4" href={igUrl(shop.artist)} target="_blank" rel="noopener">Follow @{ig}</a> for new pieces, or message to ask about one.</p>}
           </li>
         )}
@@ -77,7 +80,7 @@ export function Gallery() {
               </button>
               <div className="mt-4 px-0.5">
                 <h3 className="font-display text-[1.1rem] leading-snug sm:text-[1.2rem]">{p.title}</h3>
-                <p className="text-muted-foreground mt-0.5 text-[13px]">{spec(p)}</p>
+                {spec(p) && <p className="text-muted-foreground mt-0.5 text-[13px]">{spec(p)}</p>}
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                   <span className="text-primary font-medium">{sold ? "—" : money(p.price)}</span>
                   <Badge variant={sold ? "muted" : "success"}>{stockLabel(p)}</Badge>

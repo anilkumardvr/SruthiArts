@@ -13,5 +13,31 @@
   },
   "checkoutTest": false,
   "checkoutMode": "paypalme",
-  "checkoutApi": "https://sruthiarts-checkout.anilkumardvr.workers.dev"
+  "checkoutApi": "https://sruthiarts-checkout.anilkumardvr.workers.dev",
+  "categories": [
+    {
+      "id": "ludo-boards",
+      "label": "Ludo boards"
+    },
+    {
+      "id": "clocks",
+      "label": "Clocks"
+    },
+    {
+      "id": "originals",
+      "label": "Originals"
+    },
+    {
+      "id": "prints",
+      "label": "Prints"
+    },
+    {
+      "id": "keychains",
+      "label": "Keychains"
+    },
+    {
+      "id": "stickers",
+      "label": "Stickers"
+    }
+  ]
 }
