@@ -29,6 +29,12 @@ const items = readdirSync(join(ROOT, "content/items"))
     item.quantity = item.status === "sold" ? 0 : qty;
     item.status = item.quantity > 0 ? "available" : "sold";
     if (!item.paypalLink) delete item.paypalLink;
+    // Auctions: numbers as numbers, end time as a full ISO timestamp (the Studio saves it in UTC).
+    if (item.auction && typeof item.auction === "object") {
+      const a = item.auction;
+      const endsAt = Date.parse(a.endsAt);
+      item.auction = { start: Number(a.start), increment: Number(a.increment), endsAt: Number.isFinite(endsAt) ? new Date(endsAt).toISOString() : a.endsAt, ...(Number(a.reserve) > 0 ? { reserve: Number(a.reserve) } : {}) };
+    } else delete item.auction;
     return item;
   })
   .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || a.title.localeCompare(b.title));

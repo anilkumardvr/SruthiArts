@@ -109,7 +109,7 @@ function CartView() {
 }
 
 // ---------- Step 2: delivery details ----------
-function Field({ id, label, hint, children, className }: { id: string; label: string; hint?: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function Field({ id, label, hint, children, className }: { id: string; label: string; hint?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <div className={cn("grid gap-1.5", className)}>
       <Label htmlFor={id}>{label}</Label>
@@ -286,7 +286,7 @@ type PayPalSdk = { Buttons: (opts: Record<string, unknown>) => PayPalButtons };
 declare global { interface Window { paypal?: PayPalSdk } }
 
 let sdkPromise: Promise<PayPalSdk> | null = null;
-function loadPayPal(clientId: string, currency: string) {
+export function loadPayPal(clientId: string, currency: string) {
   if (window.paypal) return Promise.resolve(window.paypal);
   if (!sdkPromise) {
     sdkPromise = new Promise((resolve, reject) => {

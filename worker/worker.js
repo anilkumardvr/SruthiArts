@@ -8,10 +8,20 @@
 //                                    save the order with the delivery address, and send Sruthi a WhatsApp alert.
 //   GET  /api/stock                  Public live stock: { items: { [id]: { quantity, status, price } } } read from
 //                                    content/items/*.json in one GitHub GraphQL call, cached for 10 seconds (memory + edge).
+//   GET  /api/auctions               Live and ended auctions: high bid, bid count, masked bidders, endsAt, status.
+//   GET  /api/auctions/:id           One auction.
+//   POST /api/auctions/:id/bid       Place a bid (needs a bidder token from /api/bidders/verify).
+//   POST /api/bidders/start          { name, email } → emails a 6-digit code (Resend).
+//   POST /api/bidders/verify         { email, code } → signed bidder token, valid 30 days.
+//   GET  /api/pay/:number?t=         Auction winner's pay page data; POST …/delivery, …/paypal, …/capture to pay.
 //   GET  /api/admin/orders           Orders list for the admin (GitHub login required).
+//   GET  /api/admin/auctions         Auctions with full bidder details (admin). POST …/:id/close, …/:id/offer-next.
+//   GET  /api/admin/paypal           PayPal setup check (admin): which credentials are set, sandbox or live.
 //   PATCH /api/admin/orders/:key     Update an order: status (awaiting/new/packed/shipped/cancelled), tracking, note.
 //   GET  /auth, /callback            "Continue with GitHub" login for the admin (Decap/Sveltia-compatible).
 //   GET  /                           Health check: shows which features are configured.
+//   Cron (hourly)                    Reminds Sruthi about unpaid PayPal.me orders at 36 hours; cancels orders still
+//                                    unpaid after 48 hours (PayPal.me: stock goes back on sale).
 //
 // Settings (Cloudflare → Worker → Settings → Variables and Secrets). Secrets are marked (secret).
 //   ALLOWED_ORIGINS            https://www.sruthiarts.com,https://sruthiarts.com   (comma-separated)
@@ -27,7 +37,12 @@
 //     CALLMEBOT_PHONE (secret), CALLMEBOT_APIKEY (secret)                        free, via callmebot.com
 //     WHATSAPP_TOKEN (secret), WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TO (secret),    official Meta Cloud API
 //     WHATSAPP_TEMPLATE (default new_order), WHATSAPP_LANG (default en), WHATSAPP_API_VERSION (default v21.0)
-// Binding: KV namespace "ORDERS" (stores orders privately; the repo is public, so buyer details never go there).
+//   Auctions: RESEND_API_KEY (secret), BIDDER_SECRET (secret, any long random string), RESEND_FROM (optional,
+//     default "Sruthi Arts <auctions@sruthiarts.com>"), SHOP_URL (default: first ALLOWED_ORIGINS entry)
+// Bindings: KV namespace "ORDERS" (stores orders privately; the repo is public, so buyer details never go there),
+//   Durable Object "AUCTION" (class Auction, SQLite-backed: one per auction, holds its bids).
+
+import { DurableObject } from "cloudflare:workers";
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", ...headers } });
@@ -119,24 +134,38 @@ const STOCK_TTL = 10;
 const STOCK_QUERY = `query($owner: String!, $name: String!, $expr: String!) {
   repository(owner: $owner, name: $name) { object(expression: $expr) { ... on Tree { entries { name object { ... on Blob { text } } } } } }
 }`;
-async function readStock(env) {
+// Every item file, parsed: { [id]: item }. Files that aren't valid JSON are skipped.
+async function readItems(env) {
   const [owner, name] = String(env.GITHUB_REPO || "").split("/");
-  if (!owner || !name || !env.GITHUB_TOKEN) throw new Error("stock: GITHUB_REPO or GITHUB_TOKEN not set");
+  if (!owner || !name || !env.GITHUB_TOKEN) throw new Error("items: GITHUB_REPO or GITHUB_TOKEN not set");
   const res = await fetch("https://api.github.com/graphql", {
     method: "POST",
     headers: { authorization: `Bearer ${env.GITHUB_TOKEN}`, "content-type": "application/json", "user-agent": "sruthiarts-checkout" },
     body: JSON.stringify({ query: STOCK_QUERY, variables: { owner, name, expr: `${env.GITHUB_BRANCH || "main"}:content/items` } }),
   });
-  if (!res.ok) throw new Error(`stock: GitHub GraphQL ${res.status}`);
+  if (!res.ok) throw new Error(`items: GitHub GraphQL ${res.status}`);
   const body = await res.json();
   const entries = body && body.data && body.data.repository && body.data.repository.object && body.data.repository.object.entries;
-  if (body.errors || !Array.isArray(entries)) throw new Error(`stock: GitHub GraphQL returned ${JSON.stringify(body.errors || "no tree").slice(0, 300)}`);
+  if (body.errors || !Array.isArray(entries)) throw new Error(`items: GitHub GraphQL returned ${JSON.stringify(body.errors || "no tree").slice(0, 300)}`);
   const items = {};
   for (const e of entries) {
     const id = String(e.name || "").replace(/\.json$/, "");
     if (!e.name.endsWith(".json") || !/^[a-z0-9-]{1,80}$/.test(id) || !e.object || typeof e.object.text !== "string") continue;
-    let item;
-    try { item = JSON.parse(e.object.text); } catch { continue; } // a half-saved file: the shop keeps its built value
+    try { items[id] = JSON.parse(e.object.text); } catch { /* a half-saved file: the shop keeps its built value */ }
+  }
+  itemsMemo = { at: Date.now(), items };
+  return items;
+}
+// Items for auctions, kept 10 seconds in memory like the stock (fresh = true skips the copy, for the admin).
+let itemsMemo = null;
+async function getItems(env, fresh = false) {
+  if (!fresh && itemsMemo && Date.now() - itemsMemo.at < STOCK_TTL * 1000) return itemsMemo.items;
+  return readItems(env);
+}
+async function readStock(env) {
+  const all = await readItems(env);
+  const items = {};
+  for (const [id, item] of Object.entries(all)) {
     // Same rule as scripts/build-data.mjs: quantity defaults to 1; status "sold" means 0 left.
     const quantity = stockOf(item);
     items[id] = { quantity, status: quantity > 0 ? "available" : "sold", price: Number(item.price) };
@@ -246,6 +275,7 @@ async function prepareCart(env, body) {
   const lines = [];
   for (const [id, qty] of wanted) {
     const { data: item } = await loadItem(env, id);
+    if (item.auction) throw new HttpError(409, `“${item.title}” is being auctioned, so it can't be bought from the cart. Place a bid instead.`, "auction");
     const left = stockOf(item);
     if (left < 1) throw new HttpError(409, `Sorry, “${item.title}” has just sold out. Please remove it from your cart.`, "sold_out");
     if (qty > left) throw new HttpError(409, `Only ${left} of “${item.title}” left. Please lower the quantity.`, "not_enough");
@@ -333,6 +363,7 @@ async function placeRequest(env, request, ctx) {
   };
   const key = `order:${String(9999999999999 - now).padStart(13, "0")}:${number.replace(/[^A-Z0-9]/g, "")}`;
   await env.ORDERS.put(key, JSON.stringify(order));
+  await env.ORDERS.put(`ordnum:${number}`, key);
   ctx.waitUntil(notifyWhatsApp(env, order).catch((e) => console.log("whatsapp failed", e.message)));
   return json({ ok: true, number, total: Number(total), currency, payUrl: `https://www.paypal.me/${encodeURIComponent(user)}/${total}${currency}`, items: lines.map((l) => ({ id: l.id, title: l.title, qty: l.qty })), method: delivery.method, stock });
 }
@@ -382,6 +413,10 @@ async function captureOrder(env, orderId, ctx) {
     delivery,
     addressText: addressText(delivery),
     buyer: { name: [payer.name && payer.name.given_name, payer.name && payer.name.surname].filter(Boolean).join(" "), email: payer.email_address || "" },
+    // Who paid, as PayPal reports it (can differ from the delivery name).
+    payment: "paypal",
+    payer: { name: [payer.name && payer.name.given_name, payer.name && payer.name.surname].filter(Boolean).join(" "), email: payer.email_address || "", payerId: payer.payer_id || "", captureId: capture.id },
+    paidAt: new Date(now).toISOString(),
     stock,
     status: "new",
     tracking: "",
@@ -467,7 +502,13 @@ async function updateOrder(env, request, key) {
   }
   if (body.tracking !== undefined) patch.tracking = clean(body.tracking, 200);
   if (body.adminNote !== undefined) patch.adminNote = clean(body.adminNote, 500);
-  let order = { ...JSON.parse(current), ...patch, updatedAt: new Date().toISOString() };
+  const prev = JSON.parse(current);
+  // PayPal.me payments are checked by hand, so the studio records who paid and the PayPal transaction ID.
+  if (body.payer && typeof body.payer === "object") {
+    patch.payer = { ...(prev.payer || {}), name: clean(body.payer.name, 80), email: clean(body.payer.email, 120).toLowerCase(), captureId: clean(body.payer.captureId, 40).toUpperCase() };
+  }
+  if (patch.status === "new" && prev.status === "awaiting") patch.paidAt = new Date().toISOString();
+  let order = { ...prev, ...patch, updatedAt: new Date().toISOString() };
   // Cancelling an order puts its reserved pieces back; restoring it reserves them again.
   if (patch.status === "cancelled" && order.stockTaken) {
     for (const l of order.items || []) await restock(env, l.id, Number(l.qty) || 1, order.number).catch((e) => console.log("restock failed", e.message));
@@ -519,6 +560,550 @@ allowed.forEach((o) => window.opener && window.opener.postMessage("authorizing:g
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "set-cookie": "oauth_state=; Path=/; Max-Age=0" } });
 }
 
+// ---------- Shared helpers for auctions and payments ----------
+const HOUR = 3600 * 1000;
+const PAY_WINDOW_MS = 48 * HOUR; // unpaid orders (PayPal.me and auction wins) lapse after this
+const SNIPE_MS = 2 * 60 * 1000; // a bid in the last 2 minutes pushes the end to now + 2 minutes
+const BIDDER_TTL_MS = 30 * 24 * HOUR;
+const CODE_TTL_S = 600;
+const iso = (ms) => new Date(ms).toISOString();
+const round2 = (n) => Math.round(Number(n) * 100) / 100;
+const ipOf = (request) => request.headers.get("cf-connecting-ip") || "local";
+const orderKey = (now, number) => `order:${String(9999999999999 - now).padStart(13, "0")}:${number.replace(/[^A-Z0-9]/g, "")}`;
+const shopUrl = (env) => (env.SHOP_URL || String(env.ALLOWED_ORIGINS || "").split(",")[0] || "").trim().replace(/\/+$/, "");
+// "Priya" → "Pr***": enough to recognise your own bid, not enough to identify anyone.
+const mask = (name) => `${String(name || "?").trim().slice(0, 2)}***`;
+const fmtMoney = (n, currency) => { try { return new Intl.NumberFormat("en-CA", { style: "currency", currency: currency || "CAD", maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(n); } catch { return `$${n}`; } };
+
+const b64url = (buf) => { let bin = ""; for (const b of new Uint8Array(buf)) bin += String.fromCharCode(b); return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+const unb64url = (s) => { const t = String(s).replace(/-/g, "+").replace(/_/g, "/"); return dec.decode(Uint8Array.from(atob(t + "=".repeat((4 - (t.length % 4)) % 4)), (c) => c.charCodeAt(0))); };
+async function hmac(secret, text) {
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return b64url(await crypto.subtle.sign("HMAC", key, enc.encode(text)));
+}
+const sha256 = async (text) => b64url(await crypto.subtle.digest("SHA-256", enc.encode(text)));
+const safeEqual = (a, b) => { a = String(a); b = String(b); if (a.length !== b.length) return false; let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0; };
+const randomToken = () => b64url(crypto.getRandomValues(new Uint8Array(18)));
+
+// Counts requests per key in KV; false once the limit is reached. KV is eventually consistent, so limits are approximate.
+async function underLimit(env, key, limit, ttlSeconds) {
+  const n = Number((await env.ORDERS.get(key)) || 0);
+  if (n >= limit) return false;
+  await env.ORDERS.put(key, String(n + 1), { expirationTtl: Math.max(60, ttlSeconds) });
+  return true;
+}
+
+// ---------- Email (Resend) ----------
+const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const textToHtml = (t) => `<div style="font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#3b1d2c;max-width:560px">${escHtml(t).split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, "<br>").replace(/(https:\/\/[^\s<]+)/g, '<a href="$1" style="color:#a8325e">$1</a>')}</p>`).join("")}</div>`;
+async function sendEmail(env, to, subject, text) {
+  if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not set");
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({ from: env.RESEND_FROM || "Sruthi Arts <auctions@sruthiarts.com>", to: [to], subject, text, html: textToHtml(text) }),
+  });
+  if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
+// A short WhatsApp note to Sruthi (auctions, released orders). CallMeBot takes free text; the Cloud API template
+// has four variables, so the lines are folded into those.
+async function notifyText(env, lines) {
+  lines = lines.filter(Boolean).map((l) => String(l).replace(/\s+/g, " ").trim());
+  if (env.CALLMEBOT_PHONE && env.CALLMEBOT_APIKEY) {
+    const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(env.CALLMEBOT_PHONE)}&text=${encodeURIComponent(lines.join("\n"))}&apikey=${encodeURIComponent(env.CALLMEBOT_APIKEY)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`CallMeBot ${res.status}`);
+    return;
+  }
+  if (env.WHATSAPP_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_TO) {
+    const params = [lines[0] || "-", lines[1] || "-", lines[2] || "-", lines.slice(3).join(" · ") || "-"];
+    const res = await fetch(`https://graph.facebook.com/${env.WHATSAPP_API_VERSION || "v21.0"}/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.WHATSAPP_TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", to: env.WHATSAPP_TO, type: "template", template: { name: env.WHATSAPP_TEMPLATE || "new_order", language: { code: env.WHATSAPP_LANG || "en" }, components: [{ type: "body", parameters: params.map((text) => ({ type: "text", text: text.slice(0, 1000) })) }] } }),
+    });
+    if (!res.ok) throw new Error(`WhatsApp Cloud API ${res.status}`);
+  }
+}
+// Shop settings (currency, delivery fees, PayPal), kept a minute in memory for bid notifications.
+let settingsMemo = null;
+async function getSettings(env) {
+  if (settingsMemo && Date.now() - settingsMemo.at < 60000) return settingsMemo.data;
+  const data = ((await readRepoJson(env, "content/settings.json")) || {}).data || {};
+  settingsMemo = { at: Date.now(), data };
+  return data;
+}
+const quietly = (p, what) => p.catch((e) => console.log(`${what} failed`, e.message));
+
+// ---------- Bidders: email code → signed token ----------
+function biddingReady(env) {
+  if (!env.ORDERS || !env.RESEND_API_KEY || !env.BIDDER_SECRET || !env.AUCTION) throw new HttpError(503, "Bidding isn't set up yet. Please message Sruthi on Instagram.", "no_bidding");
+}
+const readEmail = (v) => {
+  const email = clean(v, 120).toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(400, "Please enter a valid email address.", "bad_email");
+  return email;
+};
+
+async function bidderStart(env, request) {
+  biddingReady(env);
+  const body = await request.json().catch(() => ({}));
+  const name = clean(body.name, 60);
+  if (name.length < 2) throw new HttpError(400, "Please enter your name.", "bad_name");
+  const email = readEmail(body.email);
+  const eh = await sha256(email);
+  if (!(await underLimit(env, `rl:bstart:ip:${ipOf(request)}:${iso(Date.now()).slice(0, 13)}`, 10, 3700))) throw new HttpError(429, "Too many codes requested from this connection. Please try again in an hour.", "rate");
+  if (!(await underLimit(env, `rl:bstart:em:${eh}:${Math.floor(Date.now() / 600000)}`, 3, 660))) throw new HttpError(429, "We've just sent codes to this email. Check your inbox (and spam), or try again in 10 minutes.", "rate");
+  const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
+  await env.ORDERS.put(`bcode:${eh}`, JSON.stringify({ h: await hmac(env.BIDDER_SECRET, `${email}:${code}`), name, exp: Date.now() + CODE_TTL_S * 1000, tries: 0 }), { expirationTtl: CODE_TTL_S });
+  try {
+    await sendEmail(env, email, `Your Sruthi Arts bidding code: ${code}`, `Hi ${name},\n\nYour code is ${code}\n\nEnter it on the auction page to start bidding. It expires in 10 minutes.\n\nIf you didn't ask for this, you can ignore this email.\n\nSruthi Arts`);
+  } catch (e) {
+    console.log("code email failed", e.message);
+    throw new HttpError(502, "We couldn't send the email right now. Please try again in a minute.", "email_failed");
+  }
+  return json({ ok: true });
+}
+
+async function bidderVerify(env, request) {
+  biddingReady(env);
+  const body = await request.json().catch(() => ({}));
+  const email = readEmail(body.email);
+  const eh = await sha256(email);
+  if (!(await underLimit(env, `rl:bverify:ip:${ipOf(request)}:${iso(Date.now()).slice(0, 13)}`, 30, 3700))) throw new HttpError(429, "Too many tries from this connection. Please try again in an hour.", "rate");
+  if (!(await underLimit(env, `rl:bverify:em:${eh}:${Math.floor(Date.now() / 600000)}`, 10, 660))) throw new HttpError(429, "Too many tries for this email. Please wait 10 minutes and ask for a new code.", "rate");
+  const key = `bcode:${eh}`;
+  const rec = JSON.parse((await env.ORDERS.get(key)) || "null");
+  if (!rec || rec.exp < Date.now()) throw new HttpError(400, "That code has expired. Ask for a new one.", "code_expired");
+  if (rec.tries >= 5) { await env.ORDERS.delete(key); throw new HttpError(400, "Too many wrong tries. Ask for a new code.", "code_locked"); }
+  const code = String(body.code || "").replace(/\D/g, "");
+  if (!safeEqual(await hmac(env.BIDDER_SECRET, `${email}:${code}`), rec.h)) {
+    rec.tries++;
+    await env.ORDERS.put(key, JSON.stringify(rec), { expirationTtl: Math.max(60, Math.ceil((rec.exp - Date.now()) / 1000)) });
+    throw new HttpError(400, "That code isn't right. Check the email and try again.", "bad_code");
+  }
+  await env.ORDERS.delete(key);
+  const exp = Date.now() + BIDDER_TTL_MS;
+  const payload = b64url(enc.encode(JSON.stringify({ n: rec.name, e: email, x: exp })));
+  return json({ token: `${payload}.${await hmac(env.BIDDER_SECRET, payload)}`, name: rec.name, email, expires: iso(exp) });
+}
+
+async function bidderFrom(env, request) {
+  const [payload, sig] = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").split(".");
+  const expired = new HttpError(401, "Please confirm your email to bid.", "bidder_needed");
+  if (!payload || !sig || !safeEqual(await hmac(env.BIDDER_SECRET, payload), sig)) throw expired;
+  let data;
+  try { data = JSON.parse(unb64url(payload)); } catch { throw expired; }
+  if (!data || !(data.x > Date.now()) || !data.e) throw expired;
+  return { name: String(data.n || "").slice(0, 60), email: String(data.e).slice(0, 120) };
+}
+
+// ---------- Auction listings (content/items/<id>.json → "auction") ----------
+function auctionCfg(id, item) {
+  const a = item && item.auction;
+  if (!a || typeof a !== "object") return null;
+  const start = Number(a.start), increment = Number(a.increment), endsAt = Date.parse(a.endsAt);
+  if (!(start > 0) || !(increment > 0) || !Number.isFinite(endsAt)) return null;
+  return { id, title: String(item.title || id).slice(0, 120), image: item.image || "", start: round2(start), increment: round2(increment), endsAt, reserve: Number(a.reserve) > 0 ? round2(a.reserve) : 0 };
+}
+async function auctionConfigs(env, fresh = false) {
+  const items = await getItems(env, fresh);
+  return Object.entries(items).map(([id, item]) => auctionCfg(id, item)).filter(Boolean);
+}
+async function auctionConfig(env, id, fresh = false) {
+  itemFile(id);
+  const cfg = auctionCfg(id, (await getItems(env, fresh))[id]);
+  if (!cfg) throw new HttpError(404, "This auction isn't listed.", "not_found");
+  return cfg;
+}
+function auctionStub(env, id) {
+  if (!env.AUCTION) throw new HttpError(503, "Auctions aren't set up yet.", "no_auctions");
+  return env.AUCTION.get(env.AUCTION.idFromName(id));
+}
+
+// ---------- Durable Object: one per auction ----------
+// Holds the bids in its own SQLite database and takes them one at a time, so two bids at the same moment can't
+// both win. An alarm fires at endsAt to close the auction.
+export class Auction extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.sql.exec("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
+    this.sql.exec("CREATE TABLE IF NOT EXISTS bids (id INTEGER PRIMARY KEY AUTOINCREMENT, amount REAL NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL, at INTEGER NOT NULL)");
+  }
+  get(k, fallback = null) { const r = this.sql.exec("SELECT v FROM meta WHERE k = ?", k).toArray()[0]; return r ? JSON.parse(r.v) : fallback; }
+  put(k, v) { this.sql.exec("INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", k, JSON.stringify(v)); }
+  top() { return this.sql.exec("SELECT id, amount, name, email, at FROM bids ORDER BY amount DESC, id ASC LIMIT 1").toArray()[0] || null; }
+
+  // Applies the listing from the item file, so edits in the Studio (increment, reserve, end time) take effect.
+  // Changing the end time of an auction that ended without a winner starts it again with no bids.
+  async sync(cfg) {
+    const cur = this.get("cfg");
+    if (!cur) {
+      this.put("cfg", cfg); this.put("endsAt", cfg.endsAt); this.put("status", "live"); this.put("offers", []);
+      await this.ctx.storage.setAlarm(cfg.endsAt);
+      return;
+    }
+    const next = { ...cur, id: cfg.id, title: cfg.title, image: cfg.image, start: cfg.start, increment: cfg.increment, reserve: cfg.reserve };
+    if (cfg.endsAt !== cur.endsAt) {
+      next.endsAt = cfg.endsAt;
+      const status = this.get("status");
+      if (status === "live") { this.put("endsAt", cfg.endsAt); await this.ctx.storage.setAlarm(cfg.endsAt); }
+      else if (status === "ended" && cfg.endsAt > Date.now()) {
+        this.sql.exec("DELETE FROM bids");
+        this.put("endsAt", cfg.endsAt); this.put("status", "live"); this.put("offers", []);
+        await this.ctx.storage.setAlarm(cfg.endsAt);
+      }
+    }
+    this.put("cfg", next);
+  }
+
+  publicState() {
+    const cfg = this.get("cfg"), status = this.get("status"), top = this.top();
+    const count = this.sql.exec("SELECT count(*) AS c FROM bids").one().c;
+    const recent = this.sql.exec("SELECT amount, name, at FROM bids ORDER BY id DESC LIMIT 20").toArray();
+    return {
+      id: cfg.id, status: status === "awarding" ? "won" : status, endsAt: iso(this.get("endsAt")), now: iso(Date.now()),
+      start: cfg.start, increment: cfg.increment, high: top ? top.amount : null, count, leader: top ? mask(top.name) : null,
+      minNext: top ? round2(top.amount + cfg.increment) : cfg.start,
+      reserve: cfg.reserve ? (top && top.amount >= cfg.reserve ? "met" : "not_met") : "none",
+      bids: recent.map((b) => ({ name: mask(b.name), amount: b.amount, at: iso(b.at) })),
+    };
+  }
+  async state(cfg) { await this.sync(cfg); return this.publicState(); }
+
+  async bid(cfg, bidder, amount) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      await this.sync(cfg);
+      const now = Date.now(), endsAt = this.get("endsAt");
+      if (this.get("status") !== "live" || now >= endsAt) return { ok: false, code: "ended", error: "This auction has ended.", state: this.publicState() };
+      const top = this.top();
+      const min = top ? round2(top.amount + cfg.increment) : cfg.start;
+      if (!(amount >= min)) return { ok: false, code: "too_low", min, error: `Your bid must be at least ${min}.`, state: this.publicState() };
+      this.sql.exec("INSERT INTO bids (amount, name, email, at) VALUES (?, ?, ?, ?)", amount, bidder.name, bidder.email, now);
+      let extended = false;
+      if (endsAt - now < SNIPE_MS) { this.put("endsAt", now + SNIPE_MS); await this.ctx.storage.setAlarm(now + SNIPE_MS); extended = true; }
+      const previous = top && top.email !== bidder.email ? { name: top.name, email: top.email, amount: top.amount } : null;
+      return { ok: true, extended, previous, state: this.publicState() };
+    });
+  }
+
+  async adminState(cfg) {
+    await this.sync(cfg);
+    const all = this.sql.exec("SELECT id, amount, name, email, at FROM bids ORDER BY amount DESC, id ASC").toArray();
+    return { ...this.publicState(), statusRaw: this.get("status"), title: cfg.title, reserveAmount: cfg.reserve, allBids: all.map((b) => ({ ...b, at: iso(b.at) })), offers: this.get("offers", []) };
+  }
+
+  // Studio "Close now": end it at once, as if the time had run out.
+  async close(cfg) {
+    await this.sync(cfg);
+    if (this.get("status") === "live") { this.put("endsAt", Date.now()); await this.finish(); }
+    return this.adminState(cfg);
+  }
+
+  // Studio "Offer to next bidder": the next highest bidder who hasn't been offered it yet gets 48 hours to pay.
+  async offerNext(cfg) {
+    await this.sync(cfg);
+    if (this.get("status") !== "won") return { ok: false, code: "not_won", error: "Only an auction that has a winner can be offered to the next bidder." };
+    const offers = this.get("offers", []);
+    const used = new Set(offers.map((o) => o.email));
+    const next = this.sql.exec("SELECT id, amount, name, email, at FROM bids ORDER BY amount DESC, id ASC").toArray().find((b) => !used.has(b.email));
+    if (!next) return { ok: false, code: "none", error: "There's no other bidder to offer it to." };
+    offers.push({ bidId: next.id, name: next.name, email: next.email, amount: next.amount, rank: offers.length + 1, number: orderNumber(), awarded: false, at: iso(Date.now()) });
+    this.put("offers", offers); this.put("status", "awarding");
+    await this.finish();
+    return { ok: true, offer: this.get("offers").at(-1), state: await this.adminState(cfg) };
+  }
+
+  async alarm() {
+    const status = this.get("status");
+    if (!this.get("cfg")) return;
+    if (status === "live") {
+      const endsAt = this.get("endsAt");
+      if (Date.now() < endsAt) { await this.ctx.storage.setAlarm(endsAt); return; } // extended since this alarm was set
+      await this.finish();
+    } else if (status === "awarding") await this.finish(); // a previous try failed part-way; the alarm retries
+  }
+
+  // Close the auction: a winner if the reserve is met, else "ended". Awarding creates the order, marks the piece
+  // sold and emails the winner. Each step is recorded, so a retry after a failure picks up where it stopped.
+  async finish() {
+    const cfg = this.get("cfg");
+    if (this.get("status") === "live") {
+      const top = this.top();
+      if (top && (!cfg.reserve || top.amount >= cfg.reserve)) {
+        this.put("offers", [{ bidId: top.id, name: top.name, email: top.email, amount: top.amount, rank: 1, number: orderNumber(), awarded: false, at: iso(Date.now()) }]);
+        this.put("status", "awarding");
+      } else {
+        this.put("status", "ended");
+        const count = this.sql.exec("SELECT count(*) AS c FROM bids").one().c;
+        const currency = (await getSettings(this.env).catch(() => ({}))).currency || "CAD";
+        await quietly(notifyText(this.env, [`Auction ended: ${cfg.title}`, top ? `Reserve not met. Highest bid ${fmtMoney(top.amount, currency)} (${count} bids).` : "No bids.", "Nothing was sold. Relist it or set a new end time in the studio."]), "whatsapp");
+        return;
+      }
+    }
+    if (this.get("status") === "awarding") {
+      const offers = this.get("offers");
+      const offer = offers.at(-1);
+      if (!offer.awarded) {
+        await awardAuction(this.env, cfg, offer);
+        offer.awarded = true;
+        this.put("offers", offers);
+      }
+      this.put("status", "won");
+    }
+  }
+}
+
+// Creates the winner's order (awaiting payment), marks the piece sold, emails the pay link and tells Sruthi.
+// Safe to run again: the order is only created once per offer.
+async function awardAuction(env, cfg, offer) {
+  if (!env.ORDERS) throw new Error("award: ORDERS KV not bound");
+  const settings = ((await readRepoJson(env, "content/settings.json")) || {}).data || {};
+  const currency = settings.currency || "CAD";
+  const number = offer.number;
+  let order;
+  const existing = await env.ORDERS.get(`ordnum:${number}`);
+  if (existing) order = JSON.parse((await env.ORDERS.get(existing)) || "null");
+  if (!order) {
+    const now = Date.now();
+    order = {
+      number, orderId: number, payment: "auction", auctionId: cfg.id, rank: offer.rank,
+      items: [{ id: cfg.id, title: cfg.title, qty: 1, price: offer.amount, image: cfg.image }],
+      subtotal: offer.amount, shipping: 0, amount: money(offer.amount), currency,
+      delivery: { method: "ship", name: offer.name, email: offer.email, phone: "", note: "", address: null, legacy: "Address not given yet" },
+      addressText: "Address not given yet", buyer: { name: offer.name, email: offer.email },
+      stock: [], stockTaken: false, status: "awaiting", tracking: "", createdAt: iso(now), payBy: iso(now + PAY_WINDOW_MS), payToken: randomToken(),
+    };
+    const key = orderKey(now, number);
+    await env.ORDERS.put(key, JSON.stringify(order));
+    await env.ORDERS.put(`ordnum:${number}`, key);
+  }
+  // The piece leaves the shop the moment it's won (a later offer to the next bidder keeps it that way).
+  const stock = await changeStock(env, cfg.id, -9999, (t) => `Auction: ${t} won by bid (${number}) — 0 left`).catch((e) => ({ ok: false, error: e.message }));
+  if (!stock.ok) console.log("auction stock update failed", stock.error);
+
+  const ship = shippingOf(settings);
+  const payUrl = `${shopUrl(env)}/#pay/${number}/${order.payToken}`;
+  const totals = [["Canada", ship.CA], ["USA", ship.US], ["rest of the world", ship.intl]].map(([k, fee]) => `${k} ${fmtMoney(offer.amount + fee, currency)}`);
+  const deadline = new Date(order.payBy).toUTCString().replace(/:\d\d GMT$/, " GMT");
+  const intro = offer.rank === 1
+    ? `Congratulations! You won the auction for “${cfg.title}” with your bid of ${fmtMoney(offer.amount, currency)}.`
+    : `Good news: “${cfg.title}” is now offered to you at your bid of ${fmtMoney(offer.amount, currency)}, because the winning bidder didn't complete payment.`;
+  await quietly(sendEmail(env, offer.email, offer.rank === 1 ? `You won “${cfg.title}” — please pay within 48 hours` : `“${cfg.title}” is yours if you'd like it`,
+    `Hi ${offer.name},\n\n${intro}\n\nPlease pay within 48 hours (by ${deadline}). Choose delivery or pickup and pay here:\n${payUrl}\n\nWith delivery: ${totals.join(" · ")}.${ship.pickup ? ` Pickup is free: ${fmtMoney(offer.amount, currency)}.` : ""}\n\nThis link is just for you, so please don't share it.\n\nYour order number is ${number}.\n\nThank you for supporting my art!\nSruthi`), "winner email");
+  await quietly(notifyText(env, [`Auction ${offer.rank === 1 ? "won" : `offered to bidder #${offer.rank}`}: ${cfg.title}`, `${fmtMoney(offer.amount, currency)} by ${offer.name} (${offer.email})`, `Order ${number}, awaiting payment until ${deadline}`, stock.ok ? "Piece marked sold." : "Piece NOT marked sold — check the studio."]), "whatsapp");
+  return { number };
+}
+
+// Which way auction winners pay: PayPal Checkout when the shop uses it and the Worker has the credentials.
+const payModeFor = (env, settings) => (settings.checkoutMode === "paypal" && env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET ? "paypal" : "paypalme");
+
+// ---------- Auction endpoints ----------
+async function listAuctions(env) {
+  const cfgs = await auctionConfigs(env);
+  if (!cfgs.length) return json({ auctions: [], now: iso(Date.now()) });
+  const auctions = await Promise.all(cfgs.map((cfg) => auctionStub(env, cfg.id).state(cfg)));
+  return json({ auctions, now: iso(Date.now()) });
+}
+async function oneAuction(env, id) {
+  const cfg = await auctionConfig(env, id);
+  return json(await auctionStub(env, id).state(cfg));
+}
+async function placeBid(env, request, id, ctx) {
+  biddingReady(env);
+  const bidder = await bidderFrom(env, request);
+  const body = await request.json().catch(() => ({}));
+  const amount = Number(body.amount);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000 || round2(amount) !== amount) throw new HttpError(400, "Please enter your bid as a number, like 120 or 120.50.", "bad_amount");
+  const cfg = await auctionConfig(env, id);
+  const r = await auctionStub(env, id).bid(cfg, bidder, amount);
+  if (!r.ok) return json({ error: r.error, code: r.code, min: r.min, state: r.state }, r.code === "ended" ? 409 : 400);
+  const currency = (await getSettings(env).catch(() => ({}))).currency || "CAD";
+  const endsTxt = new Date(r.state.endsAt).toUTCString().replace(/:\d\d GMT$/, " GMT");
+  if (r.previous) {
+    ctx.waitUntil(quietly(sendEmail(env, r.previous.email, `You've been outbid on “${cfg.title}”`,
+      `Hi ${r.previous.name},\n\nSomeone bid ${fmtMoney(amount, currency)} on “${cfg.title}”, above your ${fmtMoney(r.previous.amount, currency)}.\n\nThe auction ends ${endsTxt}. To bid again:\n${shopUrl(env)}/#auctions\n\nSruthi Arts`), "outbid email"));
+  }
+  ctx.waitUntil(quietly(notifyText(env, [`New high bid: ${cfg.title}`, `${fmtMoney(amount, currency)} by ${bidder.name} (${bidder.email})`, `${r.state.count} bid${r.state.count > 1 ? "s" : ""}${r.extended ? " · extended by 2 min" : ""}`, `Ends ${endsTxt}`]), "whatsapp"));
+  return json({ ok: true, extended: r.extended, state: r.state });
+}
+async function adminAuctions(env) {
+  const cfgs = await auctionConfigs(env, true);
+  return json({ auctions: await Promise.all(cfgs.map((cfg) => auctionStub(env, cfg.id).adminState(cfg))) });
+}
+async function adminCloseAuction(env, id) {
+  const cfg = await auctionConfig(env, id, true);
+  return json(await auctionStub(env, id).close(cfg));
+}
+async function adminOfferNext(env, id) {
+  const cfg = await auctionConfig(env, id, true);
+  const stub = auctionStub(env, id);
+  const before = await stub.adminState(cfg);
+  const last = (before.offers || []).at(-1);
+  if (last && env.ORDERS) {
+    const found = await findOrder(env, last.number);
+    if (found && !["awaiting", "cancelled"].includes(found.order.status)) throw new HttpError(409, `${last.name} has already paid (${last.number}).`, "paid");
+    if (found && found.order.status === "awaiting") {
+      found.order.status = "cancelled"; found.order.cancelReason = "offered to next bidder"; found.order.updatedAt = iso(Date.now());
+      await env.ORDERS.put(found.key, JSON.stringify(found.order));
+    }
+  }
+  const r = await stub.offerNext(cfg);
+  if (!r.ok) throw new HttpError(409, r.error, r.code);
+  return json(r);
+}
+
+// ---------- Paying for an auction win ----------
+async function findOrder(env, number) {
+  const key = await env.ORDERS.get(`ordnum:${number}`);
+  const order = key ? JSON.parse((await env.ORDERS.get(key)) || "null") : null;
+  return order ? { key, order } : null;
+}
+async function payOrder(env, number, token) {
+  if (!env.ORDERS) throw new HttpError(503, "Orders can't be loaded right now.", "no_storage");
+  const found = await findOrder(env, number);
+  if (!found || !found.order.payToken || !safeEqual(token || "", found.order.payToken)) throw new HttpError(404, "This payment link isn't valid. Please check the email, or message Sruthi.", "not_found");
+  return found;
+}
+function payable(order) {
+  if (order.status !== "awaiting") throw new HttpError(409, order.status === "cancelled" ? "This order was cancelled because payment didn't arrive within 48 hours." : "This order is already paid. Thank you!", order.status === "cancelled" ? "cancelled" : "paid");
+  if (order.payBy && Date.parse(order.payBy) < Date.now()) throw new HttpError(409, "The 48 hours to pay have passed. Please message Sruthi.", "expired");
+}
+async function paySummary(env, number, token) {
+  const { order } = await payOrder(env, number, token);
+  const settings = ((await readRepoJson(env, "content/settings.json")) || {}).data || {};
+  const mode = payModeFor(env, settings);
+  return json({
+    number, status: order.status, cancelReason: order.cancelReason || "", items: order.items.map((l) => ({ id: l.id, title: l.title, qty: l.qty, price: l.price, image: l.image })),
+    subtotal: order.subtotal, shipping: order.shipping, amount: Number(order.amount), currency: order.currency, payBy: order.payBy,
+    name: order.buyer && order.buyer.name, email: order.buyer && order.buyer.email, delivery: order.delivery && order.delivery.address ? order.delivery : null,
+    ship: shippingOf(settings), mode, paypalClientId: mode === "paypal" ? env.PAYPAL_CLIENT_ID : undefined, payUrl: order.payUrl || "",
+  });
+}
+// Saves where it goes and works out the total with the delivery fee (the server decides, as for the cart).
+async function setPayDelivery(env, found, raw) {
+  const { order, key } = found;
+  payable(order);
+  const settings = ((await readRepoJson(env, "content/settings.json")) || {}).data || {};
+  const ship = shippingOf(settings);
+  const delivery = readDelivery({ ...raw, email: order.buyer.email }, ship);
+  const shipping = Number(money(feeFor(delivery, ship)));
+  const subtotal = Number(money(order.subtotal));
+  Object.assign(order, { delivery, addressText: addressText(delivery), shipping, amount: money(subtotal + shipping), updatedAt: iso(Date.now()) });
+  const user = paypalMeUser(settings.paypal);
+  order.payUrl = user ? `https://www.paypal.me/${encodeURIComponent(user)}/${order.amount}${order.currency}` : "";
+  await env.ORDERS.put(key, JSON.stringify(order));
+  return { order, settings };
+}
+async function payDelivery(env, request, number) {
+  const body = await request.json().catch(() => ({}));
+  const found = await payOrder(env, number, body.t);
+  const { order } = await setPayDelivery(env, found, body.delivery);
+  if (!order.payUrl) throw new HttpError(503, "Online payment isn't set up yet. Please message Sruthi on Instagram.", "no_paypal");
+  return json({ ok: true, amount: Number(order.amount), shipping: order.shipping, currency: order.currency, payUrl: order.payUrl });
+}
+async function payCreatePaypal(env, request, number) {
+  const body = await request.json().catch(() => ({}));
+  const found = await payOrder(env, number, body.t);
+  const { order, settings } = await setPayDelivery(env, found, body.delivery);
+  if (payModeFor(env, settings) !== "paypal") throw new HttpError(400, "Card checkout isn't switched on. Use the PayPal link instead.", "no_checkout");
+  const l = order.items[0];
+  const unit = {
+    reference_id: "auction", custom_id: `auction|${number}`, description: `Auction: ${l.title}`.slice(0, 127),
+    amount: { currency_code: order.currency, value: order.amount, breakdown: { item_total: { currency_code: order.currency, value: money(order.subtotal) }, shipping: { currency_code: order.currency, value: money(order.shipping) } } },
+    items: [{ name: l.title.slice(0, 127), sku: l.id.slice(0, 127), quantity: "1", unit_amount: { currency_code: order.currency, value: money(l.price) }, category: "PHYSICAL_GOODS" }],
+  };
+  const d = order.delivery;
+  if (d.method === "ship") unit.shipping = { type: "SHIPPING", name: { full_name: d.name.slice(0, 300) }, address: { address_line_1: d.address.line1, ...(d.address.line2 ? { address_line_2: d.address.line2 } : {}), admin_area_2: d.address.city, ...(d.address.region ? { admin_area_1: d.address.region } : {}), ...(d.address.postal ? { postal_code: d.address.postal } : {}), country_code: d.address.country } };
+  const res = await paypal(env, "/v2/checkout/orders", { intent: "CAPTURE", purchase_units: [unit], application_context: { brand_name: "Sruthi Arts", shipping_preference: d.method === "ship" ? "SET_PROVIDED_ADDRESS" : "NO_SHIPPING", user_action: "PAY_NOW" } });
+  if (!res.ok) throw new HttpError(502, "PayPal couldn't start the checkout. Please try again.", "paypal_create");
+  order.payOrderId = res.data.id;
+  await env.ORDERS.put(found.key, JSON.stringify(order));
+  return json({ id: res.data.id, amount: Number(order.amount), currency: order.currency });
+}
+async function payCapture(env, request, number, ctx) {
+  const body = await request.json().catch(() => ({}));
+  const found = await payOrder(env, number, body.t);
+  const { order, key } = found;
+  payable(order);
+  if (!body.orderID || body.orderID !== order.payOrderId) throw new HttpError(400, "This payment doesn't match the order. Please try again.", "bad_order");
+  const res = await paypal(env, `/v2/checkout/orders/${order.payOrderId}/capture`);
+  const issue = res.data && res.data.details && res.data.details[0] && res.data.details[0].issue;
+  if (issue === "INSTRUMENT_DECLINED") return json({ error: "Your payment method was declined. Please try another.", code: "declined", restart: true }, 402);
+  if (!res.ok || res.data.status !== "COMPLETED") throw new HttpError(502, "The payment didn't go through. You have not been charged.", issue || "capture_failed");
+  const capture = res.data.purchase_units[0].payments.captures[0];
+  const payer = res.data.payer || {};
+  Object.assign(order, {
+    status: "new", captureId: capture.id, amount: capture.amount.value, currency: capture.amount.currency_code, paidAt: iso(Date.now()), updatedAt: iso(Date.now()),
+    payer: { name: [payer.name && payer.name.given_name, payer.name && payer.name.surname].filter(Boolean).join(" "), email: payer.email_address || "", payerId: payer.payer_id || "", captureId: capture.id },
+  });
+  await env.ORDERS.put(key, JSON.stringify(order));
+  ctx.waitUntil(quietly(notifyText(env, [`Auction paid: ${order.items[0].title}`, `${fmtMoney(Number(order.amount), order.currency)} by ${order.payer.name || order.buyer.name} (${order.payer.email})`, order.delivery.method === "pickup" ? "Pickup — message them to arrange" : `Ship to: ${order.addressText}`, `Order ${number}`]), "whatsapp"));
+  return json({ ok: true, number, total: order.amount, currency: order.currency, method: order.delivery.method });
+}
+
+// ---------- Hourly cron: unpaid orders lapse after 48 hours ----------
+const REMIND_AFTER_MS = 36 * HOUR; // one WhatsApp reminder per unpaid PayPal.me order, 12 hours before it lapses
+// PayPal.me orders are cancelled and their pieces go back on sale (restock). Auction wins are cancelled too; the
+// piece stays sold so Sruthi can offer it to the next bidder from the studio.
+async function expireUnpaid(env) {
+  if (!env.ORDERS) return { released: [], lapsed: [], reminded: [] };
+  const now = Date.now();
+  const released = [], lapsed = [], reminded = [];
+  let cursor;
+  do {
+    const page = await env.ORDERS.list({ prefix: "order:", limit: 1000, cursor });
+    for (const k of page.keys) {
+      const o = JSON.parse((await env.ORDERS.get(k.name)) || "null");
+      if (!o || o.status !== "awaiting") continue;
+      const deadline = o.payBy ? Date.parse(o.payBy) : Date.parse(o.createdAt) + PAY_WINDOW_MS;
+      if (!(deadline <= now)) {
+        // 36 hours in: remind Sruthi once to check PayPal. remindedAt is saved only after the message goes out,
+        // so a failed send is tried again next hour, and never twice once it's sent.
+        if (o.payment !== "auction" && !o.remindedAt && now - Date.parse(o.createdAt) >= REMIND_AFTER_MS) {
+          const hours = Math.max(1, Math.round((deadline - now) / HOUR));
+          try {
+            await notifyText(env, [`Not paid yet: ${o.number}`, `${(o.items || []).map((l) => `${l.title} ×${l.qty}`).join(", ")} · ${fmtMoney(Number(o.amount), o.currency)} · ${(o.delivery && o.delivery.name) || (o.buyer && o.buyer.name) || ""}`, `Check PayPal and mark it paid in the studio, or it's cancelled in ${hours} hour${hours === 1 ? "" : "s"}.`]);
+            o.remindedAt = iso(now);
+            await env.ORDERS.put(k.name, JSON.stringify(o));
+            reminded.push(o.number);
+          } catch (e) { console.log("reminder failed", o.number, e.message); }
+        }
+        continue;
+      }
+      if (o.payment === "auction") lapsed.push(o);
+      else {
+        for (const l of o.stockTaken ? o.items || [] : []) await restock(env, l.id, Number(l.qty) || 1, o.number).catch((e) => console.log("restock failed", e.message));
+        o.stockTaken = false;
+        released.push(o);
+      }
+      Object.assign(o, { status: "cancelled", cancelReason: "unpaid after 48 hours", updatedAt: iso(now) });
+      await env.ORDERS.put(k.name, JSON.stringify(o));
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
+  if (released.length || lapsed.length) {
+    const what = (o) => `${o.number} (${(o.items || []).map((l) => `${l.title} ×${l.qty}`).join(", ")})`;
+    await quietly(notifyText(env, [
+      `Unpaid orders cancelled after 48 hours: ${released.length + lapsed.length}`,
+      released.length ? `Back on sale: ${released.map(what).join("; ")}` : "",
+      lapsed.length ? `Auction wins not paid: ${lapsed.map(what).join("; ")} — offer them to the next bidder in the studio` : "",
+    ]), "whatsapp");
+  }
+  return { released: released.map((o) => o.number), lapsed: lapsed.map((o) => o.number), reminded };
+}
+
+// ---------- PayPal setup check (admin) ----------
+async function paypalStatus(env) {
+  const clientIdSet = Boolean(env.PAYPAL_CLIENT_ID), secretSet = Boolean(env.PAYPAL_CLIENT_SECRET);
+  let credentialsWork = null;
+  // Asking PayPal for an access token proves the pair works without touching any money, in sandbox or live.
+  if (clientIdSet && secretSet) { try { await paypalToken(env); credentialsWork = true; } catch { credentialsWork = false; } }
+  return json({ clientIdSet, secretSet, env: env.PAYPAL_ENV === "live" ? "live" : "sandbox", clientId: clientIdSet ? String(env.PAYPAL_CLIENT_ID) : "", credentialsWork });
+}
+
 // ---------- Router ----------
 export default {
   async fetch(request, env, ctx) {
@@ -529,8 +1114,11 @@ export default {
       let res;
       const m = url.pathname.match(/^\/api\/orders\/([A-Z0-9]+)\/capture$/);
       const a = decodeURIComponent(url.pathname).match(/^\/api\/admin\/orders\/(order:[0-9]+:[A-Z0-9]+)$/);
+      const au = url.pathname.match(/^\/api\/auctions\/([a-z0-9-]{1,80})(\/bid)?$/);
+      const adm = url.pathname.match(/^\/api\/admin\/auctions\/([a-z0-9-]{1,80})\/(close|offer-next)$/);
+      const pay = url.pathname.match(/^\/api\/pay\/(SA-[A-Z0-9]{4,16})(?:\/(delivery|paypal|capture))?$/);
       if (url.pathname === "/" && request.method === "GET") {
-        res = json({ ok: true, checkout: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET && env.GITHUB_TOKEN), paypalme: Boolean(env.GITHUB_TOKEN && env.ORDERS), paypalEnv: env.PAYPAL_ENV || "sandbox", orders: Boolean(env.ORDERS), whatsapp: Boolean((env.CALLMEBOT_PHONE && env.CALLMEBOT_APIKEY) || (env.WHATSAPP_TOKEN && env.WHATSAPP_TO)), login: Boolean(env.GITHUB_OAUTH_CLIENT_ID) });
+        res = json({ ok: true, checkout: Boolean(env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET && env.GITHUB_TOKEN), paypalme: Boolean(env.GITHUB_TOKEN && env.ORDERS), paypalEnv: env.PAYPAL_ENV || "sandbox", orders: Boolean(env.ORDERS), whatsapp: Boolean((env.CALLMEBOT_PHONE && env.CALLMEBOT_APIKEY) || (env.WHATSAPP_TOKEN && env.WHATSAPP_TO)), login: Boolean(env.GITHUB_OAUTH_CLIENT_ID), auctions: Boolean(env.AUCTION && env.ORDERS && env.BIDDER_SECRET && env.RESEND_API_KEY) });
       } else if (url.pathname === "/auth" && request.method === "GET") {
         return oauthStart(env, request);
       } else if (url.pathname === "/callback" && request.method === "GET") {
@@ -546,6 +1134,33 @@ export default {
         res = await captureOrder(env, m[1], ctx);
       } else if (url.pathname === "/api/stock" && request.method === "GET") {
         res = await stockResponse(env, request, ctx);
+      } else if (url.pathname === "/api/auctions" && request.method === "GET") {
+        res = await listAuctions(env);
+      } else if (au && !au[2] && request.method === "GET") {
+        res = await oneAuction(env, au[1]);
+      } else if (au && au[2] && request.method === "POST") {
+        if (!allowedOrigin(env, request)) throw new HttpError(403, "Not allowed.", "origin");
+        res = await placeBid(env, request, au[1], ctx);
+      } else if (url.pathname === "/api/bidders/start" && request.method === "POST") {
+        if (!allowedOrigin(env, request)) throw new HttpError(403, "Not allowed.", "origin");
+        res = await bidderStart(env, request);
+      } else if (url.pathname === "/api/bidders/verify" && request.method === "POST") {
+        if (!allowedOrigin(env, request)) throw new HttpError(403, "Not allowed.", "origin");
+        res = await bidderVerify(env, request);
+      } else if (pay && !pay[2] && request.method === "GET") {
+        res = await paySummary(env, pay[1], url.searchParams.get("t"));
+      } else if (pay && pay[2] && request.method === "POST") {
+        if (!allowedOrigin(env, request)) throw new HttpError(403, "Not allowed.", "origin");
+        res = pay[2] === "delivery" ? await payDelivery(env, request, pay[1]) : pay[2] === "paypal" ? await payCreatePaypal(env, request, pay[1]) : await payCapture(env, request, pay[1], ctx);
+      } else if (url.pathname === "/api/admin/auctions" && request.method === "GET") {
+        await requireAdmin(env, request);
+        res = await adminAuctions(env);
+      } else if (adm && request.method === "POST") {
+        await requireAdmin(env, request);
+        res = adm[2] === "close" ? await adminCloseAuction(env, adm[1]) : await adminOfferNext(env, adm[1]);
+      } else if (url.pathname === "/api/admin/paypal" && request.method === "GET") {
+        await requireAdmin(env, request);
+        res = await paypalStatus(env);
       } else if (url.pathname === "/api/admin/orders" && request.method === "GET") {
         await requireAdmin(env, request);
         res = await listOrders(env);
@@ -562,5 +1177,9 @@ export default {
       if (status === 500) console.log("error", e.stack || e.message);
       return json({ error: e instanceof HttpError ? e.message : "Something went wrong. You have not been charged.", code: e.code || "error" }, status, headers);
     }
+  },
+  // Hourly (wrangler.toml → [triggers] crons): unpaid orders lapse after 48 hours.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(expireUnpaid(env).then((r) => console.log("expired", JSON.stringify(r))));
   },
 };

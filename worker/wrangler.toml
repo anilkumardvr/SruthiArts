@@ -3,6 +3,9 @@
 name = "sruthiarts-checkout"
 main = "worker.js"
 compatibility_date = "2026-09-01"
+# Keep variables added in the dashboard (Worker → Settings → Variables) when deploying with wrangler; without this,
+# `wrangler deploy` replaces them with only the [vars] below. Secrets are never touched by a deploy either way.
+keep_vars = true
 
 # Optional: serve the Worker from api.sruthiarts.com instead of *.workers.dev (see docs/SETUP.md, step 8).
 # The edge cache for /api/stock only works on a custom domain. sruthiarts.com must be a zone in this Cloudflare
@@ -16,15 +19,33 @@ ALLOWED_ORIGINS = "https://www.sruthiarts.com,https://sruthiarts.com,https://ani
 GITHUB_REPO = "anilkumardvr/SruthiArts"
 GITHUB_BRANCH = "main"
 PAYPAL_ENV = "sandbox"          # switch to "live" after a successful test purchase
+SHOP_URL = "https://www.sruthiarts.com"   # links in auction emails (winner pay page, "bid again")
+# RESEND_FROM = "Sruthi Arts <auctions@sruthiarts.com>"   # sender for auction emails; the domain must be verified in Resend
 # PAYPAL_CLIENT_ID = ""         # public; set here or in the dashboard
 # GITHUB_OAUTH_CLIENT_ID = ""   # public; optional one-click admin login
 
 # Orders are kept here (private). Create it once: npx wrangler kv namespace create ORDERS
-# then paste the id below.
+# Before `npx wrangler deploy`, replace the placeholder with the real ORDERS id from
+# Cloudflare → Storage & Databases → KV → ORDERS (or `npx wrangler kv namespace list`). See docs/SETUP.md, step 9c.
 [[kv_namespaces]]
 binding = "ORDERS"
 id = "REPLACE_WITH_KV_NAMESPACE_ID"
 
+# Auctions: one Durable Object per auction holds its bids (SQLite storage, available on the free plan).
+[[durable_objects.bindings]]
+name = "AUCTION"
+class_name = "Auction"
+
+# Migrations run once, on the next deploy. Never edit or remove a migration that has been deployed; add a new one.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Auction"]
+
+# Hourly: cancel orders still unpaid after 48 hours (PayPal.me stock goes back on sale; auction wins can then be
+# offered to the next bidder in the studio).
+[triggers]
+crons = ["0 * * * *"]
+
 # Secrets are never stored in this file. Set them with `npx wrangler secret put NAME` or in the dashboard:
-#   GITHUB_TOKEN, PAYPAL_CLIENT_SECRET, GITHUB_OAUTH_CLIENT_SECRET,
+#   GITHUB_TOKEN, PAYPAL_CLIENT_SECRET, GITHUB_OAUTH_CLIENT_SECRET, RESEND_API_KEY, BIDDER_SECRET,
 #   CALLMEBOT_PHONE + CALLMEBOT_APIKEY  (or WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TO)

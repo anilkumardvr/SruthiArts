@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FadeImage } from "@/components/fade-image";
 import { InstagramIcon } from "@/components/icons";
-import { DEFAULT_PAGES, igHandle, igUrl, isSold, mailto, reduceMotion, text } from "@/lib/shop";
+import { DEFAULT_PAGES, igHandle, igUrl, isAuction, isSold, mailto, reduceMotion, text } from "@/lib/shop";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/store";
 
@@ -69,7 +69,7 @@ export function Hero() {
   const hero = { ...DEFAULT_PAGES.hero, ...shop.pages?.hero };
   const title = text(hero.title, DEFAULT_PAGES.hero.title);
   const accent = text(hero.titleAccent, DEFAULT_PAGES.hero.titleAccent);
-  const piece = shop.paintings.find((x) => !isSold(x)) || shop.paintings[0];
+  const piece = shop.paintings.find((x) => !isSold(x) && !isAuction(x)) || shop.paintings.find((x) => !isAuction(x)) || shop.paintings[0];
   const ig = igHandle(shop.artist);
   const frameRef = React.useRef<HTMLDivElement>(null);
   const artRef = React.useRef<HTMLElement>(null);

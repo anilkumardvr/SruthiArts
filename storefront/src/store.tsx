@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { type Buyer, type Painting, type Shop, cartOn as cartOnFor, emptyBuyer, fetchStock, makeMoney, mergeStock, stockOf } from "@/lib/shop";
+import { type Buyer, type Painting, type Shop, cartOn as cartOnFor, emptyBuyer, fetchStock, isAuction, makeMoney, mergeStock, stockOf } from "@/lib/shop";
 
 // The cart lives in this browser only (localStorage). Prices, stock and delivery fees are checked again by the
 // checkout server, so nothing here decides what a buyer pays.
@@ -90,6 +90,7 @@ export function StoreProvider({ initial, children }: { initial: Shop; children: 
 
   // Returns how many were actually added (stock may cap it).
   const addToCart = React.useCallback((p: Painting, qty: number) => {
+    if (isAuction(p)) return 0; // bids only
     const left = Math.min(stockOf(p), 20);
     const before = cartRef.current.find((c) => c.id === p.id)?.qty || 0;
     const after = Math.min(left, before + qty);
@@ -108,6 +109,7 @@ export function StoreProvider({ initial, children }: { initial: Shop; children: 
     const next = cs.flatMap((c) => {
       const p = ps.find((x) => x.id === c.id);
       if (!p) return [];
+      if (isAuction(p)) { notes.push(`“${p.title}” is now being auctioned, so it was removed. You can bid on it above the shop.`); return []; }
       const left = stockOf(p);
       if (left === 0) { notes.push(`“${p.title}” has sold out and was removed.`); return []; }
       if (c.qty > left) { notes.push(`Only ${left} of “${p.title}” left, so your cart was updated.`); return [{ ...c, qty: left }]; }
