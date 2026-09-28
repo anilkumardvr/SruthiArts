@@ -104,11 +104,11 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--r
 .profile-actions .btn { flex: 1; min-height: 38px; padding: 8px 12px; border-radius: 8px; font-size: .9rem; }
 
 /* ---------- Tabs ---------- */
-.tabs { position: sticky; top: 56px; z-index: 20; display: grid; grid-template-columns: repeat(4, 1fr); background: rgba(255, 255, 255, .96); border-top: 1px solid var(--line); margin-top: 12px; }
+.tabs { position: sticky; top: 56px; z-index: 20; display: grid; grid-template-columns: repeat(var(--tabs, 4), 1fr); background: rgba(255, 255, 255, .96); border-top: 1px solid var(--line); margin-top: 12px; }
 .tabs button { position: relative; display: grid; justify-items: center; gap: 2px; padding: 10px 0 8px; border: 0; background: none; color: var(--muted); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .tabs button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .tabs button[aria-selected="true"] { color: var(--ink); }
-.tabs .bar { position: absolute; top: -1px; height: 2px; width: 25%; background: var(--ink); transition: transform .35s var(--spring); }
+.tabs .bar { position: absolute; top: -1px; height: 2px; width: calc(100% / var(--tabs, 4)); background: var(--ink); transition: transform .35s var(--spring); }
 
 .view { animation: fadeUp .35s var(--ease); }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } }
@@ -221,7 +221,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--r
 .savebar .btn { pointer-events: auto; box-shadow: 0 10px 30px rgba(168, 50, 94, .35); animation: rise .35s var(--spring); min-width: 220px; }
 
 /* ---------- Bottom nav (phones) & FAB ---------- */
-.bottomnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: grid; grid-template-columns: repeat(5, 1fr); height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); background: rgba(255, 255, 255, .96); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
+.bottomnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: grid; grid-template-columns: repeat(6, 1fr); height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); background: rgba(255, 255, 255, .96); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
 .bottomnav button { border: 0; background: none; display: grid; place-items: center; color: var(--ink); position: relative; }
 .bottomnav button svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s var(--spring); }
 .bottomnav button[aria-current="page"] svg { stroke-width: 2.4; transform: scale(1.08); }
@@ -388,3 +388,40 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--r
 .cat-edit .cat-btns .btn { min-width: 0; padding: 6px 10px; }
 .cat-add { display: flex; gap: 8px; }
 .cat-add input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+
+/* ---------- Tabs with six entries: labels wrap to two short lines on phones ---------- */
+.tabs button { padding-inline: 2px; text-align: center; line-height: 1.15; }
+.tabs button > span:not(.dot) { display: block; max-width: 100%; }
+.tabs button .dot { position: absolute; top: 4px; right: calc(50% - 22px); }
+@media (max-width: 480px) { .tabs button { font-size: .62rem; letter-spacing: .03em; } }
+
+/* ---------- Payer (PayPal) ---------- */
+.payer { display: grid; gap: 6px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); }
+.payer h4 { margin: 0; font: 600 .72rem var(--body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.payer dl { margin: 0; display: grid; gap: 4px; }
+.payer dl div { display: grid; grid-template-columns: 110px 1fr; gap: 8px; font-size: .9rem; }
+.payer dt { color: var(--muted); }
+.payer dd { margin: 0; display: flex; gap: 8px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
+.payer code { font-size: .85rem; }
+.payer-form { display: grid; gap: 10px; }
+.payer-form input { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.await-box .due { color: #6b4a00; font-size: .84rem; }
+
+/* ---------- Auctions ---------- */
+.auction-sum { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; }
+.auction-sum img { width: 72px; height: 90px; object-fit: cover; border-radius: 8px; background: var(--petal); }
+.auction-sum dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.auction-sum dt { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.auction-sum dd { margin: 0; font-weight: 600; }
+table.bids { width: 100%; border-collapse: collapse; font-size: .85rem; display: block; overflow-x: auto; }
+table.bids th { text-align: left; font: 600 .7rem var(--body); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding: 4px 8px 4px 0; }
+table.bids td { padding: 6px 8px 6px 0; border-top: 1px solid var(--line); white-space: nowrap; }
+table.bids tr.top td { font-weight: 600; }
+.offers h4 { margin: 0 0 4px; font: 600 .72rem var(--body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.offers ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: .88rem; }
+.auction-fields { display: grid; gap: 12px; padding: 12px; border-radius: 12px; background: var(--soft); }
+.pp-check ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pp-check li { display: grid; gap: 1px; font-size: .9rem; }
+.pp-check li.ok b { color: var(--leaf); }
+.pp-check li.bad b { color: var(--danger); }
+.pp-check small { color: var(--muted); }

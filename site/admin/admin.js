@@ -20,7 +20,7 @@
   const MEDIUMS = ["Acrylic on canvas", "Oil on canvas", "Watercolor", "Gouache", "Mixed media", "Ink on paper", "Pencil on paper", "Acrylic on wood", "Art print", "Vinyl", "Acrylic keychain", "Resin"];
   const CURRENCIES = ["CAD", "USD", "INR", "GBP", "EUR"];
 
-  const S = { token: "", user: null, items: [], pages: null, pagesSha: "", settings: {}, settingsSha: "", orders: null, ordersError: "", tab: "posts", filter: "all", publish: null, site: {} };
+  const S = { token: "", user: null, items: [], pages: null, pagesSha: "", settings: {}, settingsSha: "", orders: null, ordersError: "", auctions: null, auctionsError: "", tab: "posts", filter: "all", publish: null, site: {} };
   const app = document.getElementById("app");
 
   // ---------- tiny helpers ----------
@@ -50,6 +50,8 @@
     gh: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>',
     heart: '<svg class="heart" viewBox="0 0 24 24"><defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f2c46b"/><stop offset=".5" stop-color="#e0789c"/><stop offset="1" stop-color="#a8325e"/></linearGradient></defs><path d="M12 21s-7.5-4.6-9.6-9.2C.8 8.2 3 4 6.9 4c2.2 0 3.7 1.2 5.1 3 1.4-1.8 2.9-3 5.1-3 3.9 0 6.1 4.2 4.5 7.8C19.5 16.4 12 21 12 21z"/></svg>',
     cart: '<svg viewBox="0 0 24 24"><path d="M5 8h14l-1.3 11.2a1.5 1.5 0 0 1-1.5 1.3H7.8a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg>',
+    clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+    gavel: '<svg viewBox="0 0 24 24"><path d="M14.5 3.5l6 6M12 6l6 6M9.5 8.5l6 6M13 5l-5.5 5.5M18.5 10.5L13 16M10.5 13L3.5 20"/><path d="M4 21h9"/></svg>',
   };
   const LOGO = '<span class="wordmark"><span class="wm-s">SRUTHI</span><span class="wm-dot">·</span><span class="wm-a">ARTS</span></span>';
   const logo = (tag = "span") => el(tag, { class: "logo", "aria-label": "Sruthi Arts", html: LOGO });
@@ -164,6 +166,23 @@
     } catch (e) { S.orders = []; S.ordersError = e.message; }
   }
 
+  async function loadAuctions() {
+    const api = checkoutApi();
+    if (!api) { S.auctions = null; return; }
+    try {
+      const res = await fetch(`${api}/api/admin/auctions`, { headers: { authorization: `Bearer ${S.token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Auctions unavailable (${res.status})`);
+      S.auctions = data.auctions || []; S.auctionsError = "";
+    } catch (e) { S.auctions = []; S.auctionsError = e.message; }
+  }
+  async function adminPost(path) {
+    const res = await fetch(`${checkoutApi()}${path}`, { method: "POST", headers: { authorization: `Bearer ${S.token}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  }
+
   // ---------- login ----------
   async function renderLogin(message = "") {
     const api = checkoutApi();
@@ -220,7 +239,8 @@
     app.replaceChildren(skeleton());
     await loadAll();
     render();
-    loadOrders().then(() => { renderNavBadges(); if (S.tab === "orders") renderView(); });
+    loadOrders().then(() => { renderNavBadges(); if (["orders", "unpaid", "auctions"].includes(S.tab)) renderView(); });
+    loadAuctions().then(() => { if (S.tab === "auctions") renderView(); });
   }
   function skeleton() {
     return el("div", {}, el("div", { class: "topbar" }, logo()),
@@ -230,6 +250,8 @@
   const TABS = [
     { id: "posts", label: "Posts", icon: "grid" },
     { id: "orders", label: "Orders", icon: "bag" },
+    { id: "unpaid", label: "Not paid yet", icon: "clock" },
+    { id: "auctions", label: "Auctions", icon: "gavel" },
     { id: "page", label: "Page", icon: "text" },
     { id: "settings", label: "Settings", icon: "gear" },
   ];
@@ -269,32 +291,37 @@
             el("button", { class: "btn", onclick: () => openComposer() }, "New post"),
             el("button", { class: "btn light", onclick: () => setTab("page") }, "Edit page"),
             el("a", { class: "btn light", href: "../", target: "_blank", rel: "noopener" }, "View shop"))),
-        el("nav", { class: "tabs", role: "tablist" },
-          TABS.map((t) => el("button", { role: "tab", "aria-selected": String(t.id === S.tab), onclick: () => setTab(t.id) }, icon(t.icon), t.label)),
+        el("nav", { class: "tabs", role: "tablist", style: `--tabs:${TABS.length}` },
+          TABS.map((t) => el("button", { role: "tab", id: `tab-${t.id}`, "aria-selected": String(t.id === S.tab), onclick: () => setTab(t.id) }, icon(t.icon), el("span", { text: t.label }))),
           el("span", { class: "bar", style: `transform:translateX(${tabIndex * 100}%)` })),
         el("div", { id: "view" })),
       el("nav", { class: "bottomnav", "aria-label": "Studio" },
         el("button", { "aria-label": "Posts", "aria-current": S.tab === "posts" ? "page" : null, onclick: () => setTab("posts") }, icon("grid")),
         el("button", { "aria-label": "Orders", "aria-current": S.tab === "orders" ? "page" : null, onclick: () => setTab("orders"), id: "nav-orders" }, icon("bag")),
+        el("button", { "aria-label": "Not paid yet", "aria-current": S.tab === "unpaid" ? "page" : null, onclick: () => setTab("unpaid"), id: "nav-unpaid" }, icon("clock")),
         el("button", { class: "plus", "aria-label": "New post", onclick: () => openComposer() }, icon("plus")),
-        el("button", { "aria-label": "Page text", "aria-current": S.tab === "page" ? "page" : null, onclick: () => setTab("page") }, icon("text")),
+        el("button", { "aria-label": "Auctions", "aria-current": S.tab === "auctions" ? "page" : null, onclick: () => setTab("auctions") }, icon("gavel")),
         el("button", { "aria-label": "Settings", "aria-current": S.tab === "settings" ? "page" : null, onclick: () => setTab("settings") }, icon("gear"))));
     renderView();
     renderPublish();
     renderNavBadges();
     if (keepScroll) window.scrollTo(0, y);
   }
+  // Badges: paid orders still to ship on Orders, unpaid ones on Not paid yet.
   function renderNavBadges() {
-    const btn = document.getElementById("nav-orders");
-    if (!btn) return;
-    btn.querySelector(".dot")?.remove();
-    const n = (S.orders || []).filter((o) => !o.status || o.status === "awaiting" || o.status === "new" || o.status === "packed").length;
-    if (n) btn.append(el("span", { class: "dot", text: String(n) }));
+    const toShip = (S.orders || []).filter((o) => !o.status || o.status === "new" || o.status === "packed").length;
+    const unpaid = (S.orders || []).filter((o) => o.status === "awaiting").length;
+    for (const [id, n] of [["nav-orders", toShip], ["tab-orders", toShip], ["nav-unpaid", unpaid], ["tab-unpaid", unpaid]]) {
+      const btn = document.getElementById(id);
+      if (!btn) continue;
+      btn.querySelector(".dot")?.remove();
+      if (n) btn.append(el("span", { class: "dot", text: String(n) }));
+    }
   }
   function renderView() {
     const view = document.getElementById("view");
     if (!view) return;
-    const v = S.tab === "posts" ? postsView() : S.tab === "orders" ? ordersView() : S.tab === "page" ? pageView() : settingsView();
+    const v = S.tab === "posts" ? postsView() : S.tab === "orders" ? ordersView() : S.tab === "unpaid" ? unpaidView() : S.tab === "auctions" ? auctionsView() : S.tab === "page" ? pageView() : settingsView();
     view.replaceChildren(el("div", { class: "view" }, v));
   }
 
@@ -314,7 +341,7 @@
     return el("button", { class: `tile${left === 0 ? " is-sold" : ""}${it._new ? " new" : ""}`, style: `--i:${Math.min(i, 15)}`, "aria-label": `${it.title}, ${left ? `${left} available` : "sold"}`, onclick: () => openPost(it) },
       im,
       photosOfItem(it).length > 1 ? el("span", { class: "multi", html: ICON.multi }) : null,
-      left === 0 ? el("span", { class: "badge sold", text: "Sold" }) : left > 1 ? el("span", { class: "badge", text: `×${left}` }) : null,
+      left === 0 ? el("span", { class: "badge sold", text: "Sold" }) : isAuctionItem(it) ? el("span", { class: "badge", text: "Auction" }) : left > 1 ? el("span", { class: "badge", text: `×${left}` }) : null,
       el("span", { class: "price-tag", text: money(it.price) }));
   }
   function emptyState(title, text, action, fn) {
@@ -496,6 +523,21 @@
       const qOut = el("output", { text: String(d.quantity ?? 1) });
       const qBump = (n) => { d.quantity = Math.max(0, Math.min(999, Number(d.quantity || 0) + n)); qOut.textContent = String(d.quantity); qOut.classList.remove("bump"); void qOut.offsetWidth; qOut.classList.add("bump"); };
       const bind = (key, attrs = {}) => el(attrs.tag || "input", { ...attrs, tag: null, value: d[key] ?? "", oninput: (e) => { d[key] = e.target.value; } });
+      // Auction: sold to the highest bidder by a set time instead of at a fixed price. The end time is typed in local
+      // time and saved in UTC.
+      const localInput = (iso) => { const t = Date.parse(iso); if (!Number.isFinite(t)) return ""; const x = new Date(t); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}T${pad(x.getHours())}:${pad(x.getMinutes())}`; };
+      d._auction = d._auction || (d.auction ? { on: true, start: d.auction.start, increment: d.auction.increment, endsAt: localInput(d.auction.endsAt), reserve: d.auction.reserve || "" } : { on: false, start: "", increment: 5, endsAt: localInput(new Date(Date.now() + 7 * 864e5).toISOString()), reserve: "" });
+      const au = d._auction;
+      const aBind = (key, attrs) => el("input", { ...attrs, value: au[key] ?? "", oninput: (e) => { au[key] = e.target.value; } });
+      const auFields = el("div", { class: "auction-fields", hidden: !au.on },
+        el("div", { class: "row2" },
+          el("label", { class: "field" }, el("span", { text: `Starting bid (${S.settings.currency || "CAD"})` }), aBind("start", { type: "number", inputmode: "decimal", min: 1, step: "any", placeholder: "100", id: "au-start" })),
+          el("label", { class: "field" }, el("span", { text: "Bid step" }), aBind("increment", { type: "number", inputmode: "decimal", min: 1, step: "any", placeholder: "5", id: "au-inc" }), el("small", { text: "Each bid must beat the last by at least this." }))),
+        el("div", { class: "row2" },
+          el("label", { class: "field" }, el("span", { text: "Ends at" }), aBind("endsAt", { type: "datetime-local", id: "au-ends" }), el("small", { text: "Your local time. A bid in the last 2 minutes adds 2 minutes." })),
+          el("label", { class: "field" }, el("span", { text: "Reserve (optional)" }), aBind("reserve", { type: "number", inputmode: "decimal", min: 0, step: "any", placeholder: "No reserve", id: "au-reserve" }), el("small", { text: "Lowest price you'll accept. Kept private." }))));
+      const priceRow = el("div", { class: "row2", hidden: au.on });
+      const auToggle = el("label", { class: "switch" }, el("input", { type: "checkbox", id: "au-on", checked: au.on, onchange: (e) => { au.on = e.target.checked; auFields.hidden = !au.on; priceRow.hidden = au.on; } }), el("span", { text: "Auction: sell to the highest bidder" }));
       const catChips = el("div", { class: "cat-chips" }, cats().map((c) => el("button", { type: "button", class: "chip", "aria-pressed": String(d.category === c.id), onclick: (e) => { d.category = c.id; [...catChips.children].forEach((b) => b.setAttribute("aria-pressed", "false")); e.currentTarget.setAttribute("aria-pressed", "true"); } }, c.label)));
       renderMedia();
       body.replaceChildren(
@@ -504,9 +546,10 @@
           el("label", { class: "field" }, el("span", { text: "Title" }), bind("title", { type: "text", placeholder: "e.g. Rose Lantern", maxlength: 80 })),
           el("label", { class: "field" }, el("span", { text: "Caption" }), bind("description", { tag: "textarea", placeholder: "Write a caption… what inspired it, colours, story" })),
           el("div", { class: "field" }, el("span", { text: "Category" }), catChips),
-          el("div", { class: "row2" },
+          auToggle, auFields,
+          (priceRow.append(
             el("label", { class: "field" }, el("span", { text: `Price (${S.settings.currency || "CAD"})` }), bind("price", { type: "number", inputmode: "decimal", min: 0, step: "1", placeholder: "249" })),
-            el("div", { class: "field" }, el("span", { text: "Quantity" }), el("div", { class: "stepper" }, el("button", { type: "button", "aria-label": "One fewer", onclick: () => qBump(-1) }, "−"), qOut, el("button", { type: "button", "aria-label": "One more", onclick: () => qBump(1) }, "+")))),
+            el("div", { class: "field" }, el("span", { text: "Quantity" }), el("div", { class: "stepper" }, el("button", { type: "button", "aria-label": "One fewer", onclick: () => qBump(-1) }, "−"), qOut, el("button", { type: "button", "aria-label": "One more", onclick: () => qBump(1) }, "+")))), priceRow),
           el("label", { class: "field" }, el("span", { text: "Medium (optional)" }), bind("medium", { type: "text", list: "mediums", placeholder: "e.g. Acrylic on canvas, Vinyl" }),
             el("datalist", { id: "mediums" }, MEDIUMS.map((m) => el("option", { value: m })))),
           el("div", { class: "row2" },
@@ -519,6 +562,18 @@
     }
     async function share() {
       const title = String(d.title || "").trim();
+      const au = d._auction || { on: false };
+      let auction;
+      if (au.on) {
+        const start = Number(au.start), increment = Number(au.increment), endsAt = new Date(au.endsAt), reserve = String(au.reserve ?? "").trim() === "" ? 0 : Number(au.reserve);
+        if (!(start > 0)) return toast("Add a starting bid.", "err");
+        if (!(increment > 0)) return toast("Add a bid step (e.g. 5).", "err");
+        if (!Number.isFinite(endsAt.getTime())) return toast("Choose when the auction ends.", "err");
+        if (endsAt.getTime() <= Date.now() && !(editing && existing.auction && existing.auction.endsAt === endsAt.toISOString())) return toast("The end time has to be in the future.", "err");
+        if (!(reserve >= 0)) return toast("Reserve must be a number, or empty.", "err");
+        auction = { start, increment, endsAt: endsAt.toISOString(), ...(reserve > 0 ? { reserve } : {}) };
+        d.price = start; d.quantity = editing ? d.quantity : 1;
+      }
       const price = Number(d.price);
       if (!title) return toast("Add a title first.", "err");
       if (!(price > 0)) return toast("Add a price.", "err");
@@ -552,6 +607,7 @@
           description: String(d.description || "").trim() || title, medium, width, height, price,
           quantity: qty, status: qty > 0 ? "available" : "sold", date: editing ? existing.date || nowLocal() : nowLocal(),
         };
+        if (auction) item.auction = auction; else delete item.auction; // switched off on edit: back to a fixed price
         for (const k of ["medium", "width", "height"]) if (item[k] === undefined) delete item[k]; // cleared on edit: remove it
         const path = `content/items/${id}.json`;
         const r = await putJson(path, item, `Admin: ${editing ? "update" : "add"} ${id}`, editing ? (await getJson(path)).sha : undefined);
@@ -567,6 +623,7 @@
     if (editing) showForm(); else { showPicker(); setTimeout(() => fileInput.click(), 350); }
   }
   const stripPrivate = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith("_") && k !== "id"));
+  const isAuctionItem = (it) => Boolean(it.auction && typeof it.auction === "object");
 
   // ---------- Orders ----------
   // ---------- Orders ----------
@@ -577,7 +634,7 @@
     const d = o.delivery || { method: "ship", name: (o.shipTo && o.shipTo.name) || (o.buyer && o.buyer.name) || "", email: (o.buyer && o.buyer.email) || "", phone: "", address: null, legacy: (o.shipTo && o.shipTo.address) || "" };
     return Object.assign(o, { _n: true, items, delivery: d, number: o.number || `#${String(o.orderId || "").slice(-6)}`, status: o.status || "new" });
   }
-  const ORDER_STATUS = { awaiting: "Awaiting payment", new: "Paid", packed: "Packed", shipped: "Shipped", cancelled: "Cancelled" };
+  const ORDER_STATUS = { awaiting: "Not paid yet", new: "Paid", packed: "Packed", shipped: "Shipped", cancelled: "Cancelled" };
   const isOpen = (o) => o.status === "new" || o.status === "packed";
   const isAwaiting = (o) => o.status === "awaiting";
   const addrLines = (o) => {
@@ -592,50 +649,94 @@
   const orderMoney = (n, cur) => { try { return new Intl.NumberFormat("en-CA", { style: "currency", currency: cur || S.settings.currency || "CAD" }).format(Number(n) || 0); } catch { return `$${n}`; } };
   async function copyText(text, msg) { try { await navigator.clipboard.writeText(text); toast(msg); } catch { toast("Couldn't copy. Select the text instead.", "err"); } }
 
+  const isPaid = (o) => o.status === "new" || o.status === "packed" || o.status === "shipped";
+  const deadlineOf = (o) => (o.payBy ? Date.parse(o.payBy) : Date.parse(o.createdAt) + 48 * 3600e3);
+  const inTime = (ms) => { const h = Math.round((ms - Date.now()) / 3600e3); return ms <= Date.now() ? "any moment now" : h < 1 ? "in under an hour" : h <= 48 ? `in ${h} h` : `in ${Math.round(h / 24)} days`; };
+  const refreshBtn = () => el("button", { type: "button", class: "btn light small", "aria-label": "Refresh orders", onclick: async (e) => { e.currentTarget.disabled = true; await loadOrders(); renderNavBadges(); renderView(); toast("Orders refreshed"); } }, "↻");
+
+  // Orders: paid orders (and cancelled ones). Unpaid orders have their own tab, "Not paid yet".
   function ordersView() {
     if (!checkoutApi()) return emptyState("Orders appear here", "Once PayPal checkout is connected (Settings → Checkout), every sale shows up here with the customer's delivery address, and Sruthi gets a WhatsApp alert.", "Open settings", () => setTab("settings"));
     if (S.orders === null) return el("div", { class: "orders" }, Array.from({ length: 3 }, () => el("div", { class: "order skeleton", style: "height:110px" })));
-    const all = S.orders.map(normOrder);
+    const every = S.orders.map(normOrder);
+    const unpaidN = every.filter(isAwaiting).length;
+    const all = every.filter((o) => !isAwaiting(o));
     const wrap = el("div", { class: "orders" });
     if (S.ordersError) wrap.append(el("p", { class: "warn", text: S.ordersError }));
-    if (!all.length) { wrap.append(emptyState("No orders yet", "When someone checks out, the order appears here with their delivery address.")); return wrap; }
+    if (unpaidN) wrap.append(el("button", { type: "button", class: "await-banner", onclick: () => setTab("unpaid") }, `${unpaidN} order${unpaidN > 1 ? "s" : ""} not paid yet →`));
+    if (!all.length) { wrap.append(emptyState("No paid orders yet", "When someone pays, the order appears here with their delivery address and who paid on PayPal.")); return wrap; }
 
-    S.ofilter = S.ofilter || (all.some(isAwaiting) ? "awaiting" : "todo"); S.ogroup = S.ogroup || "orders"; S.oproduct = S.oproduct || ""; S.oq = S.oq || "";
-    const live = all.filter((o) => o.status !== "cancelled" && o.status !== "awaiting");
-    const awaitingN = all.filter(isAwaiting).length;
+    S.ofilter = ["paid", "todo", "shipped", "cancelled"].includes(S.ofilter) ? S.ofilter : "paid"; S.ogroup = S.ogroup || "orders"; S.oproduct = S.oproduct || ""; S.oq = S.oq || "";
+    const live = all.filter(isPaid);
     const cur = (live[0] || all[0]).currency;
     wrap.append(el("div", { class: "ostats" },
-      [["Paid orders", live.length], [awaitingN ? "Awaiting pay" : "To ship", awaitingN || live.filter(isOpen).length], ["Items sold", live.reduce((t, o) => t + o.items.reduce((u, l) => u + Number(l.qty || 0), 0), 0)], ["Sales", orderMoney(live.reduce((t, o) => t + Number(o.amount || 0), 0), cur)]]
+      [["Paid orders", live.length], ["To ship", live.filter(isOpen).length], ["Items sold", live.reduce((t, o) => t + o.items.reduce((u, l) => u + Number(l.qty || 0), 0), 0)], ["Sales", orderMoney(live.reduce((t, o) => t + Number(o.amount || 0), 0), cur)]]
         .map(([k, v], i) => el("div", { class: "ostat", style: `--i:${i}` }, el("b", { text: String(v) }), el("span", { text: k })))));
 
-    // Filters
     const products = new Map();
     all.forEach((o) => o.items.forEach((l) => { const p = products.get(l.id) || { id: l.id, title: l.title, qty: 0 }; p.qty += Number(l.qty || 0); products.set(l.id, p); }));
-    const counts = { awaiting: awaitingN, todo: all.filter(isOpen).length, shipped: all.filter((o) => o.status === "shipped").length, all: all.length, cancelled: all.filter((o) => o.status === "cancelled").length };
-    const chips = el("div", { class: "chips" }, [...(awaitingN || S.ofilter === "awaiting" ? [["awaiting", "Awaiting payment"]] : []), ["todo", "To ship"], ["shipped", "Shipped"], ["all", "All"], ...(counts.cancelled ? [["cancelled", "Cancelled"]] : [])].map(([id, label]) =>
+    const counts = { paid: live.length, todo: all.filter(isOpen).length, shipped: all.filter((o) => o.status === "shipped").length, cancelled: all.filter((o) => o.status === "cancelled").length };
+    const chips = el("div", { class: "chips" }, [["paid", "Paid"], ["todo", "To ship"], ["shipped", "Shipped"], ...(counts.cancelled ? [["cancelled", "Cancelled"]] : [])].map(([id, label]) =>
       el("button", { class: "chip", "aria-pressed": String(S.ofilter === id), onclick: () => { S.ofilter = id; renderView(); } }, `${label} `, el("small", { text: String(counts[id]) }))));
     const productSel = el("select", { class: "osel", "aria-label": "Filter by product", onchange: (e) => { S.oproduct = e.target.value; renderView(); } },
       el("option", { value: "", text: "All products" }),
       [...products.values()].sort((a, b) => a.title.localeCompare(b.title)).map((p) => el("option", { value: p.id, selected: S.oproduct === p.id ? true : null, text: `${p.title} (${p.qty} sold)` })));
-    const search = el("input", { class: "osearch", type: "search", placeholder: "Search name, city, order…", value: S.oq, oninput: (e) => { S.oq = e.target.value; clearTimeout(S.oqT); S.oqT = setTimeout(() => { renderView(); const s = document.querySelector(".osearch"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }, 250); } });
+    const search = el("input", { class: "osearch", type: "search", placeholder: "Search name, city, order, payer…", value: S.oq, oninput: (e) => { S.oq = e.target.value; clearTimeout(S.oqT); S.oqT = setTimeout(() => { renderView(); const s = document.querySelector(".osearch"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }, 250); } });
     const groupBtns = el("div", { class: "seg", role: "group", "aria-label": "Group orders" },
       [["orders", "By order"], ["products", "By product"]].map(([id, label]) => el("button", { type: "button", "aria-pressed": String(S.ogroup === id), onclick: () => { S.ogroup = id; renderView(); } }, label)));
     const q = S.oq.trim().toLowerCase();
     const shown = all.filter((o) =>
-      (S.ofilter === "all" || (S.ofilter === "todo" ? isOpen(o) : o.status === S.ofilter)) &&
+      (S.ofilter === "paid" ? isPaid(o) : S.ofilter === "todo" ? isOpen(o) : o.status === S.ofilter) &&
       (!S.oproduct || o.items.some((l) => l.id === S.oproduct)) &&
-      (!q || [o.number, o.delivery.name, o.delivery.email, o.delivery.phone, ...addrLines(o), ...o.items.map((l) => l.title)].join(" ").toLowerCase().includes(q)));
+      (!q || [o.number, o.delivery.name, o.delivery.email, o.delivery.phone, ...addrLines(o), ...o.items.map((l) => l.title), ...(o.payer ? [o.payer.name, o.payer.email, o.payer.captureId] : [])].join(" ").toLowerCase().includes(q)));
     wrap.append(el("div", { class: "otools" }, chips,
       el("div", { class: "orow" }, productSel, search),
-      el("div", { class: "orow" }, groupBtns,
-        el("span", { class: "grow" }),
-        el("button", { type: "button", class: "btn light small", onclick: () => downloadCsv(shown) }, "Download CSV"),
-        el("button", { type: "button", class: "btn light small", "aria-label": "Refresh orders", onclick: async (e) => { e.currentTarget.disabled = true; await loadOrders(); renderNavBadges(); renderView(); toast("Orders refreshed"); } }, "↻"))));
-
-    if (awaitingN && S.ofilter !== "awaiting") wrap.append(el("button", { type: "button", class: "await-banner", onclick: () => { S.ofilter = "awaiting"; renderView(); } }, `${awaitingN} order${awaitingN > 1 ? "s" : ""} waiting for PayPal payment. Check PayPal, then mark them paid →`));
-    if (!shown.length) { wrap.append(el("p", { class: "empty-note", text: S.ofilter === "todo" ? "Nothing waiting to ship. 🎉" : S.ofilter === "awaiting" ? "No unpaid orders." : "No orders match." })); return wrap; }
+      el("div", { class: "orow" }, groupBtns, el("span", { class: "grow" }),
+        el("button", { type: "button", class: "btn light small", onclick: () => downloadCsv(shown) }, "Download CSV"), refreshBtn())));
+    if (!shown.length) { wrap.append(el("p", { class: "empty-note", text: S.ofilter === "todo" ? "Nothing waiting to ship. 🎉" : "No orders match." })); return wrap; }
     if (S.ogroup === "products") wrap.append(byProduct(shown)); else shown.forEach((o, i) => wrap.append(orderCard(o, i)));
     return wrap;
+  }
+
+  // Not paid yet: PayPal.me orders and auction wins waiting for payment. They lapse after 48 hours by themselves.
+  function unpaidView() {
+    if (!checkoutApi()) return emptyState("Unpaid orders appear here", "Once the checkout server is connected (Settings → Checkout), orders waiting for payment show up here.", "Open settings", () => setTab("settings"));
+    if (S.orders === null) return el("div", { class: "orders" }, Array.from({ length: 2 }, () => el("div", { class: "order skeleton", style: "height:110px" })));
+    const list = S.orders.map(normOrder).filter(isAwaiting).sort((a, b) => deadlineOf(a) - deadlineOf(b));
+    const wrap = el("div", { class: "orders" });
+    if (S.ordersError) wrap.append(el("p", { class: "warn", text: S.ordersError }));
+    wrap.append(el("div", { class: "orow" },
+      el("p", { class: "muted", style: "margin:0;flex:1", text: "Not paid yet. Check PayPal, then mark each one paid. Anything unpaid after 48 hours is cancelled automatically: shop pieces go back on sale, and auction pieces can be offered to the next bidder." }),
+      refreshBtn()));
+    if (!list.length) { wrap.append(emptyState("Nothing waiting for payment", "Every order is paid. 🎉")); return wrap; }
+    list.forEach((o, i) => wrap.append(orderCard(o, i)));
+    return wrap;
+  }
+
+  // Payer (PayPal): who paid, separate from where it goes. Filled in by PayPal Checkout, or typed in from PayPal
+  // when a PayPal.me payment is marked paid.
+  function payerFields(o, submitLabel, onSubmit) {
+    const p = o.payer || {};
+    const f = { name: el("input", { type: "text", placeholder: "Name on PayPal", value: p.name || o.delivery.name || "" }), email: el("input", { type: "email", placeholder: "PayPal email", value: p.email || "" }), captureId: el("input", { type: "text", placeholder: "Transaction ID, e.g. 8AB12345CD678901E", value: p.captureId || "" }) };
+    return el("form", { class: "payer-form", onsubmit: (e) => { e.preventDefault(); onSubmit({ name: f.name.value.trim(), email: f.email.value.trim(), captureId: f.captureId.value.trim() }); } },
+      el("label", { class: "field" }, el("span", { text: "Payer name (PayPal)" }), f.name),
+      el("label", { class: "field" }, el("span", { text: "PayPal email" }), f.email),
+      el("label", { class: "field" }, el("span", { text: "PayPal transaction ID" }), f.captureId, el("small", { text: "In PayPal → Activity → the payment → Transaction ID." })),
+      el("button", { class: "btn", type: "submit" }, submitLabel));
+  }
+  function payerBlock(o) {
+    const p = o.payer || {};
+    const has = p.name || p.email || p.captureId;
+    const box = el("section", { class: "payer" }, el("h4", { text: "Payer (PayPal)" }));
+    const show = () => box.replaceChildren(el("h4", { text: "Payer (PayPal)" }),
+      has ? el("dl", {},
+        el("div", {}, el("dt", { text: "Name" }), el("dd", { text: p.name || "—" })),
+        el("div", {}, el("dt", { text: "PayPal email" }), el("dd", {}, p.email ? el("a", { href: `mailto:${p.email}` }, p.email) : "—")),
+        el("div", {}, el("dt", { text: "Transaction ID" }), el("dd", {}, p.captureId ? el("code", { text: p.captureId }) : "—", p.captureId ? el("button", { type: "button", class: "link", onclick: () => copyText(p.captureId, "Transaction ID copied") }, "Copy") : null)))
+        : el("p", { class: "muted", text: "Not recorded." }),
+      o.payment !== "paypal" ? el("button", { type: "button", class: "link", onclick: () => box.replaceChildren(el("h4", { text: "Payer (PayPal)" }), payerFields(o, "Save payer", (payer) => setOrder(o, { payer }, "Payer saved"))) }, has ? "Edit" : "Add from PayPal") : null);
+    show();
+    return box;
   }
 
   function orderCard(o, i) {
@@ -659,29 +760,38 @@
         el("section", {},
           el("h4", { text: d.method === "pickup" ? "Pickup" : "Ship to" }),
           el("address", {}, lines.map((t) => el("span", { text: t }))),
-          d.method !== "pickup" && lines.length ? el("button", { type: "button", class: "link", onclick: () => copyText(lines.join("\n"), "Address copied") }, "Copy address") : null),
+          d.method !== "pickup" && lines.length && (d.address || o.payment !== "auction") ? el("button", { type: "button", class: "link", onclick: () => copyText(lines.join("\n"), "Address copied") }, "Copy address") : null),
         el("section", {},
           el("h4", { text: "Customer" }),
           el("p", { text: d.name || (o.buyer && o.buyer.name) || "—" }),
           d.email ? el("a", { href: `mailto:${d.email}?subject=${encodeURIComponent(`Your Sruthi Arts order ${o.number}`)}` }, d.email) : null,
           d.phone ? el("a", { href: `tel:${d.phone.replace(/[^\d+]/g, "")}` }, d.phone) : null)),
       d.note ? el("p", { class: "onote" }, el("b", { text: "Note: " }), d.note) : null,
+      isPaid(o) ? payerBlock(o) : null,
       el("dl", { class: "omoney" },
         o.subtotal !== undefined ? el("div", {}, el("dt", { text: "Items" }), el("dd", { text: orderMoney(o.subtotal, o.currency) })) : null,
         o.shipping ? el("div", {}, el("dt", { text: "Delivery" }), el("dd", { text: orderMoney(o.shipping, o.currency) })) : null,
         el("div", { class: "paid" }, el("dt", { text: isAwaiting(o) ? "To pay" : o.status === "cancelled" && o.payment === "paypalme" ? "Total" : "Paid" }), el("dd", { text: orderMoney(o.amount, o.currency) }))),
       (o.stock || []).some((s) => s.left === null) || o.stockError ? el("p", { class: "warn", text: "Stock wasn't updated automatically for this order. Adjust it on the post." }) : null,
-      isAwaiting(o) ? el("div", { class: "await-box" },
-        el("p", {}, "Customer was sent to your PayPal.me to pay ", el("b", { text: orderMoney(o.amount, o.currency) }), ". When it shows in PayPal (look for ", el("b", { text: o.number }), " or their name), mark it paid. The pieces are reserved until then."),
-        el("div", { class: "two" },
-          el("button", { type: "button", class: "btn", onclick: () => setOrder(o, { status: "new" }, "Marked as paid 💰") }, "Mark paid"),
-          el("a", { class: "btn light", href: "https://www.paypal.com/myaccount/activities/", target: "_blank", rel: "noopener" }, "Open PayPal"))) : null,
+      isAwaiting(o) ? (() => {
+        const box = el("div", { class: "await-box" });
+        const intro = o.payment === "auction"
+          ? el("p", {}, `Won at auction by ${o.buyer && o.buyer.name}${o.rank > 1 ? ` (offered as bidder #${o.rank})` : ""}. They were emailed a link to pay `, el("b", { text: orderMoney(o.amount, o.currency) }), " plus delivery. Check PayPal for ", el("b", { text: o.number }), ".")
+          : el("p", {}, "Customer was sent to your PayPal.me to pay ", el("b", { text: orderMoney(o.amount, o.currency) }), ". When it shows in PayPal (look for ", el("b", { text: o.number }), " or their name), mark it paid. The pieces are reserved until then.");
+        const due = el("p", { class: "due" }, `Cancelled automatically ${inTime(deadlineOf(o))} if not paid (${new Date(deadlineOf(o)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}).`);
+        const actions = el("div", { class: "two" },
+          el("button", { type: "button", class: "btn", onclick: () => box.replaceChildren(intro, payerFields(o, "Mark paid", (payer) => setOrder(o, { status: "new", payer }, "Marked as paid 💰"))) }, "Mark paid…"),
+          el("a", { class: "btn light", href: "https://www.paypal.com/myaccount/activities/", target: "_blank", rel: "noopener" }, "Open PayPal"));
+        box.append(intro, due, actions);
+        return box;
+      })() : null,
       o.status !== "cancelled" && !isAwaiting(o) ? stepsEl : null,
       o.status !== "cancelled" && !isAwaiting(o) && d.method !== "pickup" ? tracking : null,
       el("div", { class: "ofoot" },
         o.status === "cancelled"
           ? el("button", { type: "button", class: "link", onclick: () => setOrder(o, { status: "new" }, "Order restored") }, "Restore order")
-          : el("button", { type: "button", class: "link muted", onclick: () => { if (confirm(isAwaiting(o) ? `Cancel ${o.number}? The reserved pieces go back on sale.` : `Mark ${o.number} as cancelled? Refund the customer in PayPal first. Pieces from a PayPal.me order go back on sale.`)) setOrder(o, { status: "cancelled" }, "Order cancelled"); } }, isAwaiting(o) ? "Cancel (not paid) and put pieces back" : "Cancel order")));
+          : el("button", { type: "button", class: "link muted", onclick: () => { if (confirm(o.payment === "auction" ? `Cancel ${o.number}? The piece stays sold; you can offer it to the next bidder in Auctions.` : isAwaiting(o) ? `Cancel ${o.number}? The reserved pieces go back on sale.` : `Mark ${o.number} as cancelled? Refund the customer in PayPal first. Pieces from a PayPal.me order go back on sale.`)) setOrder(o, { status: "cancelled" }, "Order cancelled"); } }, o.payment === "auction" && isAwaiting(o) ? "Cancel (not paid)" : isAwaiting(o) ? "Cancel (not paid) and put pieces back" : "Cancel order")),
+      o.status === "cancelled" && o.cancelReason ? el("p", { class: "muted", style: "margin:0;font-size:.85rem", text: `Cancelled: ${o.cancelReason}.` }) : null);
   }
 
   // Everything that needs sending, grouped by piece: who bought it and where it goes.
@@ -709,12 +819,12 @@
   }
 
   function downloadCsv(orders) {
-    const head = ["Order", "Date", "Status", "Item", "Qty", "Name", "Email", "Phone", "Method", "Address line 1", "Address line 2", "City", "Province/State", "Postal code", "Country", "Note", "Items total", "Delivery", "Paid", "Currency", "Tracking"];
+    const head = ["Order", "Date", "Status", "Item", "Qty", "Name", "Email", "Phone", "Method", "Address line 1", "Address line 2", "City", "Province/State", "Postal code", "Country", "Note", "Items total", "Delivery", "Paid", "Currency", "Tracking", "Payer (PayPal)", "PayPal email", "PayPal transaction ID"];
     const esc = (v) => { const s = String(v == null ? "" : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const rows = [head];
     orders.forEach((o) => o.items.forEach((l) => {
       const a = o.delivery.address || {};
-      rows.push([o.number, o.createdAt, ORDER_STATUS[o.status] || o.status, l.title, l.qty, o.delivery.name, o.delivery.email, o.delivery.phone, o.delivery.method, a.line1 || o.delivery.legacy || "", a.line2, a.city, a.region, a.postal, a.country, o.delivery.note, o.subtotal, o.shipping, o.amount, o.currency, o.tracking]);
+      rows.push([o.number, o.createdAt, ORDER_STATUS[o.status] || o.status, l.title, l.qty, o.delivery.name, o.delivery.email, o.delivery.phone, o.delivery.method, a.line1 || o.delivery.legacy || "", a.line2, a.city, a.region, a.postal, a.country, o.delivery.note, o.subtotal, o.shipping, o.amount, o.currency, o.tracking, o.payer && o.payer.name, o.payer && o.payer.email, o.payer && o.payer.captureId]);
     }));
     const blob = new Blob(["﻿" + rows.map((r) => r.map(esc).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
     const a = el("a", { href: URL.createObjectURL(blob), download: `sruthiarts-orders-${new Date().toISOString().slice(0, 10)}.csv` });
@@ -728,6 +838,68 @@
       if (!res.ok) throw new Error(data.error || "Couldn't update the order");
       Object.assign(o, patch); toast(msg); renderView(); renderNavBadges();
     } catch (e) { toast(e.message, "err"); }
+  }
+
+  // ---------- Auctions ----------
+  // Live and ended auctions with every bid (name, email, amount, time). Close now ends one at once; Offer to next
+  // bidder gives the next highest bidder 48 hours to pay when the winner doesn't.
+  const AUCTION_STATUS = { live: "Live", won: "Won", awarding: "Won", ended: "Ended, not sold" };
+  function auctionsView() {
+    if (!checkoutApi()) return emptyState("Auctions appear here", "Connect the checkout server (Settings → Checkout), then turn on Auction when posting a piece.", "Open settings", () => setTab("settings"));
+    if (S.auctions === null) return el("div", { class: "orders" }, Array.from({ length: 2 }, () => el("div", { class: "order skeleton", style: "height:140px" })));
+    const wrap = el("div", { class: "orders" });
+    if (S.auctionsError) wrap.append(el("p", { class: "warn", text: S.auctionsError }));
+    wrap.append(el("div", { class: "orow" },
+      el("p", { class: "muted", style: "margin:0;flex:1", text: "Bidders' full names and emails are only shown here. The shop shows the first two letters." }),
+      el("button", { type: "button", class: "btn light small", "aria-label": "Refresh auctions", onclick: async (e) => { e.currentTarget.disabled = true; await Promise.all([loadAuctions(), loadOrders()]); renderNavBadges(); renderView(); toast("Auctions refreshed"); } }, "↻")));
+    if (!S.auctions.length) { wrap.append(emptyState("No auctions yet", "Post a piece and switch on Auction to sell it to the highest bidder.", "New post", () => openComposer())); return wrap; }
+    const orders = (S.orders || []).map(normOrder);
+    const order = (n) => orders.find((o) => o.number === n);
+    [...S.auctions].sort((a, b) => Number(b.statusRaw === "live") - Number(a.statusRaw === "live") || Date.parse(b.endsAt) - Date.parse(a.endsAt)).forEach((au, i) => {
+      const it = S.items.find((x) => x.id === au.id);
+      const live = au.statusRaw === "live";
+      const offers = au.offers || [];
+      const last = offers[offers.length - 1];
+      const lastOrder = last && order(last.number);
+      const paid = lastOrder && isPaid(lastOrder);
+      const used = new Set(offers.map((o) => o.email));
+      const nextBid = (au.allBids || []).find((b) => !used.has(b.email));
+      const canOffer = au.statusRaw === "won" && !paid && nextBid && (!lastOrder || lastOrder.status === "cancelled" || lastOrder.status === "awaiting");
+      const ends = new Date(au.endsAt);
+      wrap.append(el("article", { class: `order v2 auction st-${live ? "packed" : au.statusRaw === "won" ? (paid ? "shipped" : "new") : "cancelled"}`, style: `--i:${Math.min(i, 12)}`, "data-auction": au.id },
+        el("header", { class: "ohead" },
+          el("div", {}, el("h3", { text: au.title || au.id }), el("p", { class: "muted", text: `${live ? "Ends" : "Ended"} ${ends.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` })),
+          el("span", { class: `pill st-${live ? "packed" : au.statusRaw === "won" ? (paid ? "shipped" : "new") : "cancelled"}`, text: au.statusRaw === "won" && paid ? "Won · paid" : AUCTION_STATUS[au.statusRaw] || au.statusRaw })),
+        el("div", { class: "auction-sum" },
+          it ? el("img", { src: imgUrl(it.image), alt: "" }) : null,
+          el("dl", {},
+            el("div", {}, el("dt", { text: au.high == null ? "Starting bid" : "High bid" }), el("dd", { text: money(au.high ?? au.start) })),
+            el("div", {}, el("dt", { text: "Bids" }), el("dd", { text: String(au.count) })),
+            el("div", {}, el("dt", { text: "Reserve" }), el("dd", { text: au.reserveAmount ? `${money(au.reserveAmount)} · ${au.reserve === "met" ? "met" : "not met"}` : "None" })),
+            el("div", {}, el("dt", { text: "Step" }), el("dd", { text: money(au.increment) })))),
+        (au.allBids || []).length ? el("table", { class: "bids" },
+          el("thead", {}, el("tr", {}, ["Bidder", "Email", "Amount", "Time"].map((h) => el("th", { text: h })))),
+          el("tbody", {}, au.allBids.map((b, k) => el("tr", { class: k === 0 ? "top" : "" },
+            el("td", { text: b.name }), el("td", {}, el("a", { href: `mailto:${b.email}` }, b.email)), el("td", { text: money(b.amount) }),
+            el("td", { text: new Date(b.at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" }) })))))
+          : el("p", { class: "muted", text: "No bids yet." }),
+        offers.length ? el("div", { class: "offers" }, el("h4", { text: "Offered to" }), el("ol", {}, offers.map((of) => {
+          const od = order(of.number);
+          return el("li", {}, el("b", { text: `${of.name}` }), ` (${of.email}) at ${money(of.amount)} · order ${of.number} · `, el("span", { class: `pill st-${od ? od.status : "new"}`, text: od ? (od.status === "cancelled" ? "Not paid" : ORDER_STATUS[od.status]) : "Sending…" }));
+        }))) : null,
+        el("div", { class: "two" },
+          live ? el("button", { type: "button", class: "btn light", onclick: async (e) => {
+            if (!confirm(`Close “${au.title}” now? ${au.reserve === "met" || (!au.reserveAmount && au.count) ? "The highest bidder wins and gets an email to pay." : "Nothing will be sold (no bids above the reserve)."}`)) return;
+            e.currentTarget.disabled = true;
+            try { await adminPost(`/api/admin/auctions/${au.id}/close`); await Promise.all([loadAuctions(), loadOrders()]); toast("Auction closed"); renderNavBadges(); renderView(); } catch (err) { toast(err.message, "err"); e.currentTarget.disabled = false; }
+          } }, "Close now") : null,
+          au.statusRaw === "won" && !paid ? el("button", { type: "button", class: "btn light", disabled: !canOffer, title: nextBid ? "" : "No other bidders", onclick: async (e) => {
+            if (!confirm(`Offer “${au.title}” to ${nextBid.name} (${nextBid.email}) at ${money(nextBid.amount)}? ${lastOrder && lastOrder.status === "awaiting" ? `${last.name}'s unpaid order will be cancelled. ` : ""}They get an email and 48 hours to pay.`)) return;
+            e.currentTarget.disabled = true;
+            try { const r = await adminPost(`/api/admin/auctions/${au.id}/offer-next`); await Promise.all([loadAuctions(), loadOrders()]); toast(`Offered to ${r.offer.name}`); renderNavBadges(); renderView(); } catch (err) { toast(err.message, "err"); e.currentTarget.disabled = false; }
+          } }, nextBid ? `Offer to next bidder (${nextBid.name})` : "No other bidders") : null)));
+    });
+    return wrap;
   }
 
   // ---------- Page text ----------
@@ -804,12 +976,13 @@
         el("div", { class: "field" }, el("span", { text: "How customers pay" }),
           el("div", { class: "method-pick" },
             [["paypalme", "PayPal.me link", "Customer pays the total on your PayPal.me page. You tap Paid when it arrives."], ["paypal", "Automatic PayPal checkout", "Card or PayPal inside the site; paid orders arrive by themselves. Needs a PayPal Business app."]].map(([id, t, sub]) =>
-              el("label", { class: "radio-card" }, el("input", { type: "radio", name: "paymode", value: id, checked: (d.checkoutMode || "paypalme") === id, onchange: () => { d.checkoutMode = id; dirty(); clientRow.hidden = id !== "paypal"; } }), el("span", {}, el("b", { text: t }), el("small", { text: sub })))))),
+              el("label", { class: "radio-card" }, el("input", { type: "radio", name: "paymode", value: id, checked: (d.checkoutMode || "paypalme") === id, onchange: () => { d.checkoutMode = id; dirty(); clientRow.hidden = id !== "paypal"; const w = document.getElementById("pp-check-wrap"); if (w) w.hidden = id !== "paypal"; } }), el("span", {}, el("b", { text: t }), el("small", { text: sub })))))),
         inp("checkoutApi", "Checkout server URL", { type: "url", placeholder: "https://sruthiarts-checkout.<you>.workers.dev" }, "Leave empty until the checkout server is set up (docs/SETUP.md)."),
         clientRow,
         inp("paypal", "PayPal.me username", { placeholder: "SruthirikaKoora" }, "Just the name after paypal.me/, without @. Used for the Buy button until checkout is set up."),
         el("label", { class: "switch" }, el("input", { type: "checkbox", checked: Boolean(d.checkoutTest), onchange: (e) => { d.checkoutTest = e.target.checked; dirty(); } }), el("span", { text: "Test mode: only show the cart at sruthiarts.com/?test" })),
-        el("button", { class: "btn light", onclick: test }, "Test connection"), status),
+        el("button", { class: "btn light", onclick: test }, "Test connection"), status,
+        paypalCheck(d)),
       el("section", { class: "card", style: "--i:2" }, el("h2", { text: "Delivery & pickup" }),
         el("p", { class: "muted", style: "margin:0", text: `Delivery fee per order, in ${d.currency || "CAD"}. Use 0 for free delivery.` }),
         el("div", { class: "fees" },
@@ -853,6 +1026,33 @@
       el("p", { class: "muted", style: "margin:0", text: "The filter buttons on the shop, in this order. A category only shows on the shop once it has a post." }),
       list,
       el("div", { class: "cat-add" }, add, el("button", { type: "button", class: "btn light", onclick: addIt }, "Add")));
+  }
+
+  // PayPal (automatic checkout) setup check: which Worker credentials are set and sandbox or live. Asks the
+  // Worker, which never sends the secret back; it only says whether PayPal accepted the pair.
+  function paypalCheck(d) {
+    const out = el("div", { class: "pp-check" });
+    const run = async () => {
+      const api = (d.checkoutApi || "").replace(/\/+$/, "");
+      if (!api) { out.replaceChildren(el("p", { class: "muted", text: "Add the checkout server URL first." })); return; }
+      out.replaceChildren(el("span", { class: "pill", text: "Checking PayPal…" }));
+      try {
+        const res = await fetch(`${api}/api/admin/paypal`, { headers: { authorization: `Bearer ${S.token}` } });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(r.error || `Check failed (${res.status})`);
+        const row = (ok, label, detail) => el("li", { class: ok ? "ok" : ok === false ? "bad" : "" }, el("b", { text: `${ok ? "✓" : ok === false ? "✗" : "•"} ${label}` }), detail ? el("small", { text: detail }) : null);
+        const idMatch = r.clientId && d.paypalClientId ? r.clientId === d.paypalClientId : null;
+        out.replaceChildren(el("ul", {},
+          row(r.clientIdSet, "PAYPAL_CLIENT_ID set on the server", r.clientIdSet ? `${r.clientId.slice(0, 8)}…${idMatch === false ? " — doesn't match the client ID above" : idMatch ? " — matches the client ID above" : ""}` : "Add it under Worker → Settings → Variables."),
+          row(r.secretSet, "PAYPAL_CLIENT_SECRET set on the server", r.secretSet ? "Set (hidden)" : "Add it as a Secret under Worker → Settings → Variables."),
+          row(r.credentialsWork, r.credentialsWork === null ? "Credentials not tested yet" : r.credentialsWork ? "PayPal accepted the credentials" : "PayPal rejected the credentials", r.credentialsWork === false ? `Check the ID and secret are both from the ${r.env === "live" ? "Live" : "Sandbox"} tab.` : ""),
+          row(null, r.env === "live" ? "Environment: LIVE — real payments" : "Environment: sandbox — test payments only", r.env === "live" ? "" : "Switch PAYPAL_ENV to live after a successful sandbox purchase."),
+          idMatch === false ? row(false, "Client IDs differ", "The shop and the server must use the same client ID.") : null));
+      } catch (e) { out.replaceChildren(el("p", { class: "warn", text: e.message })); }
+    };
+    return el("div", { class: "field", hidden: (d.checkoutMode || "paypalme") !== "paypal", id: "pp-check-wrap" },
+      el("span", { text: "PayPal setup check" }),
+      el("button", { type: "button", class: "btn light", onclick: run }, "Check PayPal setup"), out);
   }
 
   async function saveSettings() {

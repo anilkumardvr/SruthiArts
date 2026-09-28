@@ -111,6 +111,58 @@ The Worker works at its `*.workers.dev` address, but a custom domain looks tidie
 
 `ALLOWED_ORIGINS` doesn't change: it lists the shop's address, not the Worker's.
 
+## 9. Auctions (timed bidding)
+
+Auctions run on the same Worker: one small **Durable Object** per auction keeps the bids and takes them one at a time, an alarm closes it at the end time, and an hourly **Cron Trigger** cancels orders nobody paid for within 48 hours. Bidders confirm their email with a 6-digit code sent by **Resend**. Everything works on the `workers.dev` address; no custom domain is needed.
+
+### 9a. Resend (email codes, outbid and winner emails)
+
+1. Create a free account at **resend.com** (3,000 emails a month).
+2. **Domains → Add domain** → `sruthiarts.com`. Resend lists a few DNS records (an MX and TXT record for `send`, and a DKIM TXT record).
+3. In Cloudflare → `sruthiarts.com` → **DNS → Records**, add each record exactly as shown, with **Proxy status: DNS only**. (Or use Resend's **Sign in to Cloudflare** button, which adds them for you.) Back in Resend, click **Verify**. It usually passes within minutes.
+4. **API Keys → Create API key**, permission **Sending access**, domain `sruthiarts.com`. Copy it; it's shown once.
+5. Worker → **Settings → Variables and Secrets** → add **Secret** `RESEND_API_KEY` with that key.
+
+Emails come from `Sruthi Arts <auctions@sruthiarts.com>`. To use another address on the same verified domain, add a text variable `RESEND_FROM`, e.g. `Sruthi Arts <hello@sruthiarts.com>`. Replies go nowhere unless that address exists (Cloudflare **Email Routing** can forward it to Sruthi's inbox).
+
+### 9b. BIDDER_SECRET
+
+Bidder logins are signed with a secret only the Worker knows. Generate a long random string (for example `openssl rand -base64 48`, or any password manager's 40+ character password) and add it as **Secret** `BIDDER_SECRET`. Changing it later signs every bidder out; they just confirm their email again.
+
+### 9c. Durable Object, migration and cron
+
+`worker/wrangler.toml` already declares everything:
+
+- `[[durable_objects.bindings]]`: `AUCTION` → class `Auction`
+- `[[migrations]]` tag `v1` with `new_sqlite_classes = ["Auction"]` (SQLite-backed, available on the free plan)
+- `[triggers] crons = ["0 * * * *"]` (hourly)
+
+The migration runs once, on the next deploy. **Never edit or delete a migration that has been deployed**; add a new one with a new tag instead.
+
+**Before deploying:** `wrangler.toml` still has `id = "REPLACE_WITH_KV_NAMESPACE_ID"` under `[[kv_namespaces]]`. Replace it with the id of your `ORDERS` namespace (Cloudflare → **Storage & Databases → KV**, or `npx wrangler kv namespace list`). A deploy with the placeholder fails, and a deploy with the wrong id would point orders at an empty namespace.
+
+Then redeploy the Worker, either way:
+- **With wrangler (recommended):** `cd worker && npx wrangler deploy`. This applies the binding, the migration and the cron from `wrangler.toml` in one go. Pushing to `main` does the same through `.github/workflows/worker.yml` when the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets are set.
+- **From the dashboard:** Worker → **Edit code**, paste the new `worker/worker.js`, **Deploy**. Then **Settings → Bindings → Add → Durable Object**: variable `AUCTION`, class `Auction`, and **Settings → Triggers → Cron Triggers → Add** `0 * * * *`. If the dashboard doesn't offer the `Auction` class, deploy once with wrangler instead.
+
+Check: the Worker's address shows `"auctions": true` on the health page once `RESEND_API_KEY` and `BIDDER_SECRET` are set, and **Triggers → Cron Triggers** lists `0 * * * *`.
+
+### 9d. Running an auction
+
+Studio → **+ New post** → switch on **Auction**, then set the starting bid, bid step, end time (your local time) and an optional reserve. The piece appears in **Auctions** above the shop, not in the cart. **Studio → Auctions** shows every bidder's name, email, amount and time, and has **Close now** and **Offer to next bidder**. The winner gets an email with a link to pay within 48 hours. If they don't pay, the hourly cron cancels their order and tells you on WhatsApp; then use **Offer to next bidder**.
+
+## 10. Switching to automatic PayPal checkout (PayPal Business + REST app)
+
+PayPal.me needs only a personal account, but you check each payment by hand. Automatic checkout (card or PayPal on the site, payer details recorded by themselves) needs:
+
+1. A **PayPal Business** account. Upgrade the personal one for free at paypal.com → **Settings → Account type**; the same email and balance carry over.
+2. A **REST app**: developer.paypal.com → **Apps & Credentials → Create App** (Merchant). Start on the **Sandbox** tab.
+3. Worker variables: `PAYPAL_CLIENT_ID` (text) and `PAYPAL_CLIENT_SECRET` (**Secret**), `PAYPAL_ENV = sandbox`.
+4. Studio → **Settings → Checkout** → **Automatic PayPal checkout**, paste the same client ID, **Save settings**, then **Check PayPal setup**. It shows whether both credentials are set on the server, whether PayPal accepts them, and whether you're in **sandbox** or **live**. The secret is never shown.
+5. Test with a sandbox buyer, then repeat steps 2–4 on the **Live** tab with `PAYPAL_ENV = live`.
+
+Auction winners pay the same way: PayPal Checkout when it's switched on, otherwise the PayPal.me link with the exact total for their country.
+
 ## Troubleshooting
 
 | What you see | What to check |
@@ -118,4 +170,6 @@ The Worker works at its `*.workers.dev` address, but a custom domain looks tidie
 | No PayPal buttons | Studio → Settings: both the server URL and client ID are filled; wait a minute after saving. |
 | "Checkout couldn't load" | The Worker address is wrong, or `ALLOWED_ORIGINS` doesn't match the shop address exactly. |
 | Paid, but stock didn't change | The `GITHUB_TOKEN` secret expired or lacks Contents write. The order still appears in Orders with a warning. |
+| Bidders get no code email | Resend → **Logs**. Usually the domain isn't verified yet or `RESEND_API_KEY` is missing. The health page shows `"auctions": false` until both secrets are set. |
+| "Auctions aren't set up yet" | The Worker has no `AUCTION` Durable Object binding yet: redeploy with wrangler, or add the binding in the dashboard (step 9c). |
 | No WhatsApp message | The Worker health page shows `"whatsapp": false`, or the CallMeBot key/number is wrong. Worker → Logs shows the error. |

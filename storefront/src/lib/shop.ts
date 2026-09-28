@@ -17,6 +17,8 @@ export type Painting = {
   alt?: string;
   date?: string;
   paypalLink?: string;
+  // Timed auction instead of a fixed price: bids go through the checkout server, not the cart.
+  auction?: { start: number; increment: number; endsAt: string; reserve?: number };
 };
 
 export type Shipping = { CA?: number | string; US?: number | string; intl?: number | string; pickup?: boolean; pickupNote?: string };
@@ -94,6 +96,7 @@ export function spec(p: Painting) {
 }
 export const stockOf = (p: Painting) => (p.status === "sold" ? 0 : Number.isFinite(Number(p.quantity)) ? Math.max(0, Number(p.quantity)) : 1);
 export const isSold = (p: Painting) => stockOf(p) === 0;
+export const isAuction = (p: Painting) => Boolean(p.auction && typeof p.auction === "object");
 export const stockLabel = (p: Painting) => { const n = stockOf(p); return n === 0 ? "Sold out" : `${n} available`; };
 export const photosOf = (p?: Painting | null) => (p && p.images && p.images.length ? p.images : [p && p.image].filter((x): x is string => Boolean(x)));
 
@@ -119,7 +122,7 @@ export function paypalUrl(a: Artist, p: Painting) {
 // the studio) or "paypal" (automatic PayPal/card checkout; needs a PayPal Business app).
 export const payMode = (a: Artist) => (a.checkoutMode === "paypal" ? "paypal" : "paypalme");
 // The checkout server (Cloudflare Worker) address, when one is set and looks right.
-const validCheckoutApi = (a: Artist) => { const url = a.checkoutApi || ""; return /^https:\/\//.test(url) && !/paypal\.(me|com)/i.test(url); };
+export const validCheckoutApi = (a: Artist) => { const url = a.checkoutApi || ""; return /^https:\/\//.test(url) && !/paypal\.(me|com)/i.test(url); };
 export function checkoutReady(a: Artist) {
   if (!validCheckoutApi(a)) return false;
   return payMode(a) === "paypal" ? /^[A-Za-z0-9_-]{40,}$/.test(a.paypalClientId || "") : Boolean(cleanPaypalUser(a.paypal));
@@ -247,3 +250,47 @@ export type OrderResult = {
 };
 
 export const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------- Auctions ----------
+export type AuctionState = {
+  id: string;
+  status: "live" | "won" | "ended";
+  endsAt: string;
+  now: string;
+  start: number;
+  increment: number;
+  high: number | null;
+  count: number;
+  leader: string | null;
+  minNext: number;
+  reserve: "none" | "met" | "not_met";
+  bids: { name: string; amount: number; at: string }[];
+};
+
+// The verified bidder, kept in this browser for the 30 days the server's token is valid.
+const BIDDER_KEY = "sruthiarts.bidder";
+export type Bidder = { token: string; name: string; email: string; expires: string };
+export function loadBidder(): Bidder | null {
+  try {
+    const b = JSON.parse(localStorage.getItem(BIDDER_KEY) || "null");
+    return b && b.token && Date.parse(b.expires) > Date.now() ? b : null;
+  } catch {
+    return null;
+  }
+}
+export function saveBidder(b: Bidder | null) {
+  try { if (b) localStorage.setItem(BIDDER_KEY, JSON.stringify(b)); else localStorage.removeItem(BIDDER_KEY); } catch { /* private mode: asks again next visit */ }
+}
+
+export async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { cache: "no-cache" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(typeof data.error === "string" ? data.error : "Something went wrong. Please try again.", data);
+  return data as T;
+}
+export async function postAuth<T = Record<string, unknown>>(url: string, body: unknown, token: string): Promise<T> {
+  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(typeof data.error === "string" ? data.error : "Something went wrong. Please try again.", data);
+  return data as T;
+}

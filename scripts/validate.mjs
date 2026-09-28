@@ -43,6 +43,14 @@ if (data) {
     if ((p.images || []).length > 10) warnings.push(`${where}: has ${p.images.length} photos; 10 or fewer keeps the page fast`);
     if (!Number.isInteger(p.quantity) || p.quantity < 0) errors.push(`${where}: quantity must be a whole number, 0 or more`);
     if (p.paypalLink && !/^https:\/\//.test(p.paypalLink)) errors.push(`${where}: paypalLink must start with https://`);
+    if (p.auction) {
+      const a = p.auction;
+      if (!(Number(a.start) > 0)) errors.push(`${where}: auction.start must be a number above 0`);
+      if (!(Number(a.increment) > 0)) errors.push(`${where}: auction.increment must be a number above 0`);
+      if (!Number.isFinite(Date.parse(a.endsAt))) errors.push(`${where}: auction.endsAt must be a date and time, e.g. 2026-10-05T18:00:00Z`);
+      if (a.reserve !== undefined && !(Number(a.reserve) >= 0)) errors.push(`${where}: auction.reserve must be a number, 0 or more`);
+      if (Number(a.reserve) > 0 && Number(a.reserve) < Number(a.start)) warnings.push(`${where}: auction.reserve is below the starting bid, so it has no effect`);
+    }
   });
   if (!(data.paintings || []).length) warnings.push("content/items is empty — the shop will show no items");
 

@@ -1,10 +1,12 @@
 import * as React from "react";
 
+import { Auctions } from "@/components/auctions";
 import { CartPanel } from "@/components/cart";
 import { FairyDust } from "@/components/effects";
 import { Gallery } from "@/components/gallery";
 import { About, Contact, Hero, HowToBuy, SiteFooter, SiteHeader, TabBar } from "@/components/sections";
 import { Viewer } from "@/components/viewer";
+import { WinnerPay } from "@/components/pay";
 import type { Shop } from "@/lib/shop";
 import { StoreProvider, useStore } from "@/store";
 
@@ -45,6 +47,7 @@ function Storefront() {
       <SiteHeader />
       <main id="top">
         <Hero />
+        <Auctions />
         <Gallery />
         <About />
         <HowToBuy />
@@ -54,6 +57,7 @@ function Storefront() {
       <TabBar />
       <Viewer />
       <CartPanel />
+      <WinnerPay />
       <HashLinks />
       <FairyDust />
     </div>
