@@ -21,10 +21,18 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: storefront/package-lock.json
       - name: Build shop data from content/
         run: node scripts/build-data.mjs
       - name: Check shop data and file references
         run: node scripts/validate.mjs
+      - name: Install storefront dependencies
+        run: npm ci
+        working-directory: storefront
+      - name: Build storefront (type-check + Vite)
+        run: npm run build
+        working-directory: storefront
 
   deploy:
     needs: validate
@@ -41,11 +49,26 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: storefront/package-lock.json
       - name: Build shop data from content/
         run: node scripts/build-data.mjs
+      - name: Install storefront dependencies
+        run: npm ci
+        working-directory: storefront
+      # Vite copies site/ (admin/, images/, data/shop.json, favicon.svg, 404.html) into storefront/dist as-is.
+      - name: Build storefront
+        run: npm run build
+        working-directory: storefront
+      - name: Check the site bundle has the admin, images and shop data
+        run: |
+          for f in index.html admin/index.html admin/admin.js data/shop.json favicon.svg 404.html; do
+            test -f "storefront/dist/$f" || { echo "::error::storefront/dist/$f is missing"; exit 1; }
+          done
+          test -d storefront/dist/images/paintings || { echo "::error::storefront/dist/images/paintings is missing"; exit 1; }
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: storefront/dist
       - id: deployment
         uses: actions/deploy-pages@v4
