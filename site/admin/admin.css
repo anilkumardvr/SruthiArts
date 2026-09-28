@@ -378,3 +378,13 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--r
 .order.v2.st-awaiting { border-left-color: var(--gold); border-left-style: dashed; }
 .order.v2.st-new { border-left-color: #6b9be8; }
 .await-box .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* ---------- Settings: shop categories ---------- */
+.cat-edit { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cat-edit li { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 8px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; }
+.cat-edit li input { min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.cat-edit li small { grid-column: 1; font-size: .78rem; }
+.cat-edit .cat-btns { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 4px; }
+.cat-edit .cat-btns .btn { min-width: 0; padding: 6px 10px; }
+.cat-add { display: flex; gap: 8px; }
+.cat-add input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }

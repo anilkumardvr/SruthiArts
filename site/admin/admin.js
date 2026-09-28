@@ -7,13 +7,17 @@
   const BRANCH = "main";
   const API = "https://api.github.com";
   const TOKEN_KEY = "sruthiarts.token";
-  const CATS = [
+  // Shop categories come from content/settings.json ("categories"), edited in Settings → Shop categories.
+  // These four are only the fallback for a settings file without the list.
+  const DEFAULT_CATS = [
     { id: "ludo-boards", label: "Ludo boards" },
     { id: "clocks", label: "Clocks" },
     { id: "originals", label: "Originals" },
     { id: "prints", label: "Prints" },
   ];
-  const MEDIUMS = ["Acrylic on canvas", "Oil on canvas", "Watercolor", "Gouache", "Mixed media", "Ink on paper", "Pencil on paper", "Acrylic on wood", "Art print"];
+  const cats = () => (Array.isArray(S.settings.categories) && S.settings.categories.length ? S.settings.categories : DEFAULT_CATS);
+  // Suggestions only: the medium is free text and optional (stickers and keychains often have none).
+  const MEDIUMS = ["Acrylic on canvas", "Oil on canvas", "Watercolor", "Gouache", "Mixed media", "Ink on paper", "Pencil on paper", "Acrylic on wood", "Art print", "Vinyl", "Acrylic keychain", "Resin"];
   const CURRENCIES = ["CAD", "USD", "INR", "GBP", "EUR"];
 
   const S = { token: "", user: null, items: [], pages: null, pagesSha: "", settings: {}, settingsSha: "", orders: null, ordersError: "", tab: "posts", filter: "all", publish: null, site: {} };
@@ -66,7 +70,11 @@
   const relImg = (p) => String(p || "").trim().replace(/^\/+/, "").replace(/^site\//, "");
   const imgUrl = (p) => (p ? (p.startsWith("blob:") ? p : `https://raw.githubusercontent.com/${REPO}/${BRANCH}/site/${relImg(p)}`) : "");
   const stockOf = (it) => (it.status === "sold" ? 0 : Number.isFinite(Number(it.quantity)) ? Math.max(0, Math.floor(Number(it.quantity))) : 1);
-  const catLabel = (id) => (CATS.find((c) => c.id === id) || { label: id || "Uncategorized" }).label;
+  const catLabel = (id) => (cats().find((c) => c.id === id) || { label: id || "Uncategorized" }).label;
+  // "Rose Lantern" → "rose-lantern"; unique among the ids already taken.
+  const uniqueId = (label, taken) => { const base = slugify(label) || "category"; let id = base, n = 2; while (taken.includes(id)) id = `${base}-${n++}`; return id; };
+  // "Acrylic on canvas · 40 × 50 cm", "Vinyl · 7 cm", or "" — only what's filled in.
+  const specOf = (it) => { const w = Number(it.width) > 0 ? Number(it.width) : 0, h = Number(it.height) > 0 ? Number(it.height) : 0; return [String(it.medium || "").trim(), w && h ? `${w} × ${h} cm` : w || h ? `${w || h} cm` : ""].filter(Boolean).join(" · "); };
   // Every photo of a post, cover first ("image" is the cover, "images" lists them all).
   const photosOfItem = (it) => [...new Set([it.image, ...(Array.isArray(it.images) ? it.images : [])].filter((x) => typeof x === "string" && x))];
   const MAX_PHOTOS = 10;
@@ -294,7 +302,7 @@
   function postsView() {
     const list = S.items.filter((i) => S.filter === "all" || (S.filter === "sold" ? stockOf(i) === 0 : i.category === S.filter));
     const chips = el("div", { class: "chips" },
-      [{ id: "all", label: "All" }, ...CATS, { id: "sold", label: "Sold" }].map((c) =>
+      [{ id: "all", label: "All" }, ...cats(), { id: "sold", label: "Sold" }].map((c) =>
         el("button", { class: "chip", "aria-pressed": String(S.filter === c.id), onclick: () => { S.filter = c.id; renderView(); } }, c.label)));
     if (!S.items.length) return el("div", {}, emptyState("Share your first piece", "Tap + to post a photo. It appears in the shop about a minute later.", "New post", () => openComposer()));
     if (!list.length) return el("div", {}, chips, el("p", { class: "empty", text: "Nothing here yet." }));
@@ -367,7 +375,7 @@
       el("div", { class: "post-meta" },
         el("h3", { text: `${it.title} · ${money(it.price)}` }),
         it.description ? el("p", { class: "cap", text: it.description }) : null,
-        el("p", { class: "meta", text: `${catLabel(it.category)} · ${it.medium || ""} · ${it.width || "?"} × ${it.height || "?"} cm` })),
+        el("p", { class: "meta", text: [catLabel(it.category), specOf(it)].filter(Boolean).join(" · ") })),
       el("div", { class: "stock-card" },
         el("div", {}, el("b", { text: "Available" }), el("small", { text: "Goes down by itself after each PayPal sale" })),
         el("div", { class: "stepper" }, el("button", { "aria-label": "One fewer", onclick: () => bump(-1) }, "−"), out, el("button", { "aria-label": "One more", onclick: () => bump(1) }, "+"))),
@@ -418,7 +426,7 @@
     const editing = Boolean(existing);
     const d = editing
       ? { ...existing }
-      : { title: "", description: "", category: S.filter && CATS.some((c) => c.id === S.filter) ? S.filter : "originals", price: "", quantity: 1, medium: "Acrylic on canvas", width: "", height: "", alt: "" };
+      : { title: "", description: "", category: S.filter && cats().some((c) => c.id === S.filter) ? S.filter : cats().some((c) => c.id === "originals") ? "originals" : cats()[0].id, price: "", quantity: 1, medium: "", width: "", height: "", alt: "" };
     // Photos: existing ones have a path; new ones have a blob until they're uploaded.
     let photos = editing ? photosOfItem(existing).map((path, i) => ({ path, url: (existing._urls && existing._urls[i]) || imgUrl(path) })) : [];
     let sel = 0, formShown = false;
@@ -488,7 +496,7 @@
       const qOut = el("output", { text: String(d.quantity ?? 1) });
       const qBump = (n) => { d.quantity = Math.max(0, Math.min(999, Number(d.quantity || 0) + n)); qOut.textContent = String(d.quantity); qOut.classList.remove("bump"); void qOut.offsetWidth; qOut.classList.add("bump"); };
       const bind = (key, attrs = {}) => el(attrs.tag || "input", { ...attrs, tag: null, value: d[key] ?? "", oninput: (e) => { d[key] = e.target.value; } });
-      const catChips = el("div", { class: "cat-chips" }, CATS.map((c) => el("button", { type: "button", class: "chip", "aria-pressed": String(d.category === c.id), onclick: (e) => { d.category = c.id; [...catChips.children].forEach((b) => b.setAttribute("aria-pressed", "false")); e.currentTarget.setAttribute("aria-pressed", "true"); } }, c.label)));
+      const catChips = el("div", { class: "cat-chips" }, cats().map((c) => el("button", { type: "button", class: "chip", "aria-pressed": String(d.category === c.id), onclick: (e) => { d.category = c.id; [...catChips.children].forEach((b) => b.setAttribute("aria-pressed", "false")); e.currentTarget.setAttribute("aria-pressed", "true"); } }, c.label)));
       renderMedia();
       body.replaceChildren(
         media,
@@ -499,10 +507,12 @@
           el("div", { class: "row2" },
             el("label", { class: "field" }, el("span", { text: `Price (${S.settings.currency || "CAD"})` }), bind("price", { type: "number", inputmode: "decimal", min: 0, step: "1", placeholder: "249" })),
             el("div", { class: "field" }, el("span", { text: "Quantity" }), el("div", { class: "stepper" }, el("button", { type: "button", "aria-label": "One fewer", onclick: () => qBump(-1) }, "−"), qOut, el("button", { type: "button", "aria-label": "One more", onclick: () => qBump(1) }, "+")))),
-          el("label", { class: "field" }, el("span", { text: "Medium" }), el("select", { onchange: (e) => (d.medium = e.target.value) }, MEDIUMS.map((m) => el("option", { value: m, selected: d.medium === m ? true : null, text: m })))),
+          el("label", { class: "field" }, el("span", { text: "Medium (optional)" }), bind("medium", { type: "text", list: "mediums", placeholder: "e.g. Acrylic on canvas, Vinyl" }),
+            el("datalist", { id: "mediums" }, MEDIUMS.map((m) => el("option", { value: m })))),
           el("div", { class: "row2" },
-            el("label", { class: "field" }, el("span", { text: "Width (cm)" }), bind("width", { type: "number", inputmode: "numeric", min: 1, placeholder: "40" })),
-            el("label", { class: "field" }, el("span", { text: "Height (cm)" }), bind("height", { type: "number", inputmode: "numeric", min: 1, placeholder: "50" }))),
+            el("label", { class: "field" }, el("span", { text: "Width (cm, optional)" }), bind("width", { type: "number", inputmode: "decimal", min: 0, step: "any", placeholder: "40" })),
+            el("label", { class: "field" }, el("span", { text: "Height (cm, optional)" }), bind("height", { type: "number", inputmode: "decimal", min: 0, step: "any", placeholder: "50" }))),
+          el("small", { class: "muted", style: "margin-top:-8px", text: "Leave the size empty for stickers or keychains, or fill one side (e.g. 7 cm)." }),
           el("label", { class: "field" }, el("span", { text: "Photo description" }), bind("alt", { type: "text", placeholder: "What the photo shows (read aloud to blind visitors)" }), el("small", { text: "Optional. If empty, the title is used." })),
           el("div", { class: "progress", hidden: true, id: "progress" }, el("i")),
           el("button", { class: "btn block", type: "button", onclick: () => share() }, editing ? "Save changes" : "Share to shop")));
@@ -513,7 +523,11 @@
       if (!title) return toast("Add a title first.", "err");
       if (!(price > 0)) return toast("Add a price.", "err");
       if (!photos.length) return toast("Add at least one photo.", "err");
-      const width = Math.max(1, Math.round(Number(d.width) || 1)), height = Math.max(1, Math.round(Number(d.height) || 1));
+      // Optional size and medium: kept only when filled in (numbers above 0, rounded to 0.1 cm).
+      const size = (v) => { const n = Math.round(Number(v) * 10) / 10; return String(v ?? "").trim() !== "" && n > 0 ? n : undefined; };
+      const width = size(d.width), height = size(d.height), medium = String(d.medium || "").trim() || undefined;
+      if (String(d.width ?? "").trim() !== "" && width === undefined) return toast("Width must be a number above 0, or empty.", "err");
+      if (String(d.height ?? "").trim() !== "" && height === undefined) return toast("Height must be a number above 0, or empty.", "err");
       const prog = document.getElementById("progress"); const bar = prog && prog.firstChild;
       const setP = (p) => { if (prog) { prog.hidden = false; bar.style.width = `${p}%`; } };
       shareBtn.disabled = true;
@@ -535,9 +549,10 @@
         const item = {
           ...(editing ? stripPrivate(existing) : {}),
           title, category: d.category, image: images[0], images, alt: String(d.alt || "").trim() || title,
-          description: String(d.description || "").trim() || title, medium: d.medium || MEDIUMS[0], width, height, price,
+          description: String(d.description || "").trim() || title, medium, width, height, price,
           quantity: qty, status: qty > 0 ? "available" : "sold", date: editing ? existing.date || nowLocal() : nowLocal(),
         };
+        for (const k of ["medium", "width", "height"]) if (item[k] === undefined) delete item[k]; // cleared on edit: remove it
         const path = `content/items/${id}.json`;
         const r = await putJson(path, item, `Admin: ${editing ? "update" : "add"} ${id}`, editing ? (await getJson(path)).sha : undefined);
         setP(100);
@@ -761,7 +776,7 @@
 
   // ---------- Settings ----------
   function settingsView() {
-    const d = S.setDraft || (S.setDraft = { ...S.settings });
+    const d = S.setDraft || (S.setDraft = { ...S.settings, categories: cats().map((c) => ({ ...c })) }); // own copy: edits stay in the draft until saved
     const saveBar = el("div", { class: "savebar", hidden: !S.dirty }, el("button", { class: "btn light", style: "min-width:auto;margin-right:8px", onclick: () => { S.setDraft = null; S.dirty = false; renderView(); } }, "Discard"), el("button", { class: "btn", onclick: () => saveSettings() }, "Save settings"));
     const dirty = () => { S.dirty = true; saveBar.hidden = false; };
     const inp = (key, label, attrs = {}, hint) => el("label", { class: "field" }, el("span", { text: label }), el("input", { type: "text", ...attrs, value: d[key] || "", oninput: (e) => { d[key] = e.target.value.trim(); dirty(); } }), hint ? el("small", { text: hint }) : null);
@@ -784,6 +799,7 @@
         inp("name", "Artist name"), inp("instagram", "Instagram username", { placeholder: "sruthi_artss" }, "Without the @."),
         inp("email", "Email (optional)", { type: "email" }),
         el("label", { class: "field" }, el("span", { text: "Currency" }), el("select", { onchange: (e) => { d.currency = e.target.value; dirty(); } }, CURRENCIES.map((c) => el("option", { value: c, selected: (d.currency || "CAD") === c ? true : null, text: c }))))),
+      categoriesCard(d, dirty),
       el("section", { class: "card", style: "--i:1" }, el("h2", { text: "Checkout" }),
         el("div", { class: "field" }, el("span", { text: "How customers pay" }),
           el("div", { class: "method-pick" },
@@ -808,6 +824,37 @@
           el("a", { class: "btn light", href: "classic/" }, "Classic editor"))),
       saveBar);
   }
+  // Shop categories: rename, add, reorder, and remove when no post uses it. Ids are made from the name when a
+  // category is added and never change, so posts keep their category after a rename.
+  function categoriesCard(d, dirty) {
+    const list = el("ol", { class: "cat-edit" });
+    const used = (id) => S.items.filter((it) => it.category === id).length;
+    const draw = () => list.replaceChildren(...d.categories.map((c, i) => {
+      const n = used(c.id);
+      return el("li", {},
+        el("input", { type: "text", value: c.label, maxlength: 40, "aria-label": `Name of category ${i + 1}`, oninput: (e) => { c.label = e.target.value; dirty(); } }),
+        el("small", { class: "muted", text: `${c.id} · ${n} post${n === 1 ? "" : "s"}` }),
+        el("span", { class: "cat-btns" },
+          el("button", { type: "button", class: "btn light small", "aria-label": `Move ${c.label} up`, disabled: i === 0, onclick: () => { d.categories.splice(i - 1, 0, d.categories.splice(i, 1)[0]); dirty(); draw(); } }, "↑"),
+          el("button", { type: "button", class: "btn light small", "aria-label": `Move ${c.label} down`, disabled: i === d.categories.length - 1, onclick: () => { d.categories.splice(i + 1, 0, d.categories.splice(i, 1)[0]); dirty(); draw(); } }, "↓"),
+          el("button", { type: "button", class: "btn light small", "aria-label": `Remove ${c.label}`, title: n ? `${n} post${n === 1 ? " uses" : "s use"} it. Move them to another category first.` : "Remove", disabled: n > 0 || d.categories.length === 1, onclick: () => { d.categories.splice(i, 1); dirty(); draw(); } }, "Remove")));
+    }));
+    draw();
+    const add = el("input", { type: "text", maxlength: 40, placeholder: "New category, e.g. Bookmarks", "aria-label": "New category name" });
+    const addIt = () => {
+      const label = add.value.trim();
+      if (!label) return;
+      if (d.categories.some((c) => c.label.trim().toLowerCase() === label.toLowerCase())) return toast("There's already a category with that name.", "err");
+      d.categories.push({ id: uniqueId(label, d.categories.map((c) => c.id)), label });
+      add.value = ""; dirty(); draw();
+    };
+    add.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addIt(); } });
+    return el("section", { class: "card", style: "--i:1" }, el("h2", { text: "Shop categories" }),
+      el("p", { class: "muted", style: "margin:0", text: "The filter buttons on the shop, in this order. A category only shows on the shop once it has a post." }),
+      list,
+      el("div", { class: "cat-add" }, add, el("button", { type: "button", class: "btn light", onclick: addIt }, "Add")));
+  }
+
   async function saveSettings() {
     try {
       const { sha } = await getJson("content/settings.json");
@@ -822,6 +869,12 @@
         }
         sh.pickup = sh.pickup !== false; sh.pickupNote = String(sh.pickupNote || "").trim();
         clean.shipping = sh;
+      }
+      if (Array.isArray(clean.categories)) {
+        clean.categories = clean.categories.map((c) => ({ id: c.id, label: String(c.label || "").trim() }));
+        if (clean.categories.some((c) => !c.label)) return toast("Every category needs a name.", "err");
+        const missing = S.items.find((it) => !clean.categories.some((c) => c.id === it.category));
+        if (missing) return toast(`“${missing.title}” is in a category that was removed. Move it first.`, "err");
       }
       clean.checkoutTest = Boolean(clean.checkoutTest);
       clean.paypal = (clean.paypal || "").replace(/^https?:\/\/(www\.)?paypal\.me\//i, "").replace(/^paypal\.me\//i, "").replace(/^@/, "").replace(/[/?#].*$/, "");

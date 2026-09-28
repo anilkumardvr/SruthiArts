@@ -6,9 +6,9 @@ export type Painting = {
   title: string;
   category: string;
   description: string;
-  medium: string;
-  width: number;
-  height: number;
+  medium?: string; // optional: stickers and keychains often have no canvas size
+  width?: number;
+  height?: number;
   price: number;
   status: "available" | "sold";
   quantity?: number;
@@ -32,6 +32,7 @@ export type Artist = {
   checkoutMode?: "paypal" | "paypalme";
   checkoutApi?: string;
   paypalClientId?: string;
+  categories?: Category[];
 };
 
 export type Pages = {
@@ -44,19 +45,24 @@ export type Pages = {
 
 export type Shop = { artist: Artist; pages: Pages | null; paintings: Painting[] };
 
-// Shop categories, in menu order. The "id" is what each item's "category" stores.
-export const CATEGORIES = [
-  { id: "all", label: "All" },
+// Shop categories, in menu order. The list comes from content/settings.json (Studio → Settings → Shop categories);
+// these four are only the fallback. The "id" is what each item's "category" stores.
+export type Category = { id: string; label: string };
+export const DEFAULT_CATEGORIES: Category[] = [
   { id: "ludo-boards", label: "Ludo boards" },
   { id: "clocks", label: "Clocks" },
   { id: "originals", label: "Originals" },
   { id: "prints", label: "Prints" },
-] as const;
+];
+export function categoriesOf(a: Artist): Category[] {
+  const list = (Array.isArray(a.categories) ? a.categories : []).filter((c) => c && typeof c.id === "string" && typeof c.label === "string" && c.label.trim());
+  return list.length ? list : DEFAULT_CATEGORIES;
+}
 
 // Defaults shown when content/pages.json leaves a field empty (same text the old HTML carried).
 export const DEFAULT_PAGES = {
   hero: {
-    eyebrow: "Ludo boards · Clocks · Originals · Prints",
+    eyebrow: "Ludo boards · Clocks · Originals · Prints · Keychains · Stickers",
     title: "Small doors into",
     titleAccent: "quieter worlds",
     intro: "Fairy-tale inspired pieces painted by Sruthi in the hours after work, from one-of-a-kind originals to ludo boards, clocks and prints.",
@@ -80,7 +86,12 @@ export const DEFAULT_PAGES = {
 
 export const text = (v: unknown, fallback: string) => (typeof v === "string" && v.trim() ? v : fallback);
 
-export const spec = (p: Painting) => `${p.medium} · ${p.width} × ${p.height} cm`;
+// "Acrylic on canvas · 40 × 50 cm", "Vinyl · 7 cm", or "" — only what's filled in.
+export function spec(p: Painting) {
+  const w = Number(p.width) > 0 ? Number(p.width) : 0, h = Number(p.height) > 0 ? Number(p.height) : 0;
+  const size = w && h ? `${w} × ${h} cm` : w || h ? `${w || h} cm` : "";
+  return [String(p.medium || "").trim(), size].filter(Boolean).join(" · ");
+}
 export const stockOf = (p: Painting) => (p.status === "sold" ? 0 : Number.isFinite(Number(p.quantity)) ? Math.max(0, Number(p.quantity)) : 1);
 export const isSold = (p: Painting) => stockOf(p) === 0;
 export const stockLabel = (p: Painting) => { const n = stockOf(p); return n === 0 ? "Sold out" : `${n} available`; };

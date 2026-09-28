@@ -165,7 +165,7 @@ function ViewerBody({ p, onStep, Title, Description }: { p: Painting; onStep: (d
         <div>
           <p className="text-muted-foreground text-[11px] font-medium tracking-[0.18em] uppercase">{shop.artist.name || "Sruthi"}</p>
           <Title className="font-display mt-1.5 text-[1.75rem] leading-tight font-normal">{p.title}</Title>
-          <p className="text-muted-foreground mt-1 text-sm">{spec(p)}</p>
+          {spec(p) && <p className="text-muted-foreground mt-1 text-sm">{spec(p)}</p>}
         </div>
         <Description className="text-foreground/85 text-[.97rem] leading-relaxed">{p.description}</Description>
         <div className="flex flex-wrap items-center justify-between gap-2">

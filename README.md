@@ -1,6 +1,6 @@
 # Sruthi Arts
 
-Fairy-tale inspired art by Sruthi: ludo boards, clocks, original paintings and prints. The storefront is a Vite + React + TypeScript app styled with Tailwind CSS and shadcn/ui, built to static files and hosted free on GitHub Pages, with a built-in admin for editing everything without code.
+Fairy-tale inspired art by Sruthi: ludo boards, clocks, original paintings, prints, keychains and stickers. The storefront is a Vite + React + TypeScript app styled with Tailwind CSS and shadcn/ui, built to static files and hosted free on GitHub Pages, with a built-in admin for editing everything without code.
 
 ## How it works
 
@@ -85,7 +85,7 @@ Add `content/items/rose-lantern.json` and put its photo in `site/images/painting
 }
 ```
 
-`category` is one of `ludo-boards`, `clocks`, `originals` or `prints`. `quantity` is how many are left (default 1). `width` and `height` are in centimetres.
+`category` is one of the ids in `content/settings.json` → `categories`: `ludo-boards`, `clocks`, `originals`, `prints`, `keychains` or `stickers` (add, rename and reorder them in **Studio → Settings → Shop categories**). `quantity` is how many are left (default 1). `medium`, `width` and `height` are optional (leave them out for stickers and keychains); `width` and `height` are in centimetres.
 
 ## Preview locally
 

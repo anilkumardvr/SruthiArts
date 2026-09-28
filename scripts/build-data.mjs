@@ -56,6 +56,18 @@ if (artist.paypalClientId && !validClientId(artist.paypalClientId)) {
   delete artist.paypalClientId;
 }
 
+// Shop categories, in menu order (Studio → Settings → Shop categories). The first four are the fallback.
+const DEFAULT_CATEGORIES = [
+  { id: "ludo-boards", label: "Ludo boards" },
+  { id: "clocks", label: "Clocks" },
+  { id: "originals", label: "Originals" },
+  { id: "prints", label: "Prints" },
+];
+const cats = Array.isArray(artist.categories)
+  ? artist.categories.filter((c) => c && typeof c.id === "string" && /^[a-z0-9-]+$/.test(c.id) && typeof c.label === "string" && c.label.trim()).map((c) => ({ id: c.id, label: c.label.trim() }))
+  : [];
+artist.categories = cats.length ? cats : DEFAULT_CATEGORIES;
+
 const shop = { artist, pages, paintings: items };
 mkdirSync(join(ROOT, "site/data"), { recursive: true });
 writeFileSync(join(ROOT, "site/data/shop.json"), JSON.stringify(shop, null, 2) + "\n");

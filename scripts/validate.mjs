@@ -6,7 +6,8 @@ import { join, dirname } from "node:path";
 const SITE = new URL("../site/", import.meta.url).pathname;
 const errors = [];
 const warnings = [];
-const CATEGORIES = ["ludo-boards", "clocks", "originals", "prints"];
+// Fallback when content/settings.json has no "categories" list.
+const DEFAULT_CATEGORIES = ["ludo-boards", "clocks", "originals", "prints"];
 
 // 1. Built shop data
 let data;
@@ -17,12 +18,24 @@ try {
 }
 
 if (data) {
-  const required = { title: "string", category: "string", description: "string", medium: "string", width: "number", height: "number", price: "number", status: "string", image: "string", alt: "string" };
+  const cats = Array.isArray(data.artist && data.artist.categories) ? data.artist.categories : [];
+  const CATEGORIES = cats.length ? cats.map((c) => c && c.id) : DEFAULT_CATEGORIES;
+  const seen = new Set();
+  cats.forEach((c, i) => {
+    if (!c || typeof c.id !== "string" || !/^[a-z0-9-]+$/.test(c.id)) errors.push(`content/settings.json: categories[${i}].id must be lowercase letters, digits and dashes`);
+    else if (seen.has(c.id)) errors.push(`content/settings.json: category "${c.id}" is listed twice`);
+    else seen.add(c.id);
+    if (!c || typeof c.label !== "string" || !c.label.trim()) errors.push(`content/settings.json: categories[${i}].label must not be empty`);
+  });
+  // medium, width and height are optional: stickers and keychains often have no canvas size.
+  const required = { title: "string", category: "string", description: "string", price: "number", status: "string", image: "string", alt: "string" };
   (data.paintings || []).forEach((p) => {
     const where = `content/items/${p.id}.json`;
     for (const [k, t] of Object.entries(required)) {
       if (typeof p[k] !== t || (t === "string" && !p[k].trim())) errors.push(`${where}: "${k}" must be a non-empty ${t}`);
     }
+    for (const k of ["width", "height"]) if (p[k] !== undefined && p[k] !== null && p[k] !== "" && !(typeof p[k] === "number" && p[k] > 0)) errors.push(`${where}: "${k}" must be a number above 0, or left out`);
+    if (p.medium !== undefined && p.medium !== null && typeof p.medium !== "string") errors.push(`${where}: "medium" must be text, or left out`);
     if (!/^[a-z0-9-]+$/.test(p.id)) errors.push(`${where}: file name must be lowercase letters, digits and dashes (it becomes the item's link)`);
     if (!CATEGORIES.includes(p.category)) errors.push(`${where}: category must be one of ${CATEGORIES.join(", ")}`);
     if (p.status && !["available", "sold"].includes(p.status)) errors.push(`${where}: status must be "available" or "sold"`);
