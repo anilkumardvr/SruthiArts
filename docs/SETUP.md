@@ -113,7 +113,7 @@ The Worker works at its `*.workers.dev` address, but a custom domain looks tidie
 
 ## 9. Auctions (timed bidding)
 
-Auctions run on the same Worker: one small **Durable Object** per auction keeps the bids and takes them one at a time, an alarm closes it at the end time, and an hourly **Cron Trigger** cancels orders nobody paid for within 48 hours. Bidders confirm their email with a 6-digit code sent by **Resend**. Everything works on the `workers.dev` address; no custom domain is needed.
+Auctions run on the same Worker: one small **Durable Object** per auction keeps the bids and takes them one at a time, an alarm closes it at the end time, and an hourly **Cron Trigger** handles unpaid orders: at 36 hours Sruthi gets one WhatsApp reminder per unpaid PayPal.me order, and at 48 hours it's cancelled. Bidders confirm their email with a 6-digit code sent by **Resend**. Everything works on the `workers.dev` address; no custom domain is needed.
 
 ### 9a. Resend (email codes, outbid and winner emails)
 
@@ -139,7 +139,19 @@ Bidder logins are signed with a secret only the Worker knows. Generate a long ra
 
 The migration runs once, on the next deploy. **Never edit or delete a migration that has been deployed**; add a new one with a new tag instead.
 
-**Before deploying:** `wrangler.toml` still has `id = "REPLACE_WITH_KV_NAMESPACE_ID"` under `[[kv_namespaces]]`. Replace it with the id of your `ORDERS` namespace (Cloudflare → **Storage & Databases → KV**, or `npx wrangler kv namespace list`). A deploy with the placeholder fails, and a deploy with the wrong id would point orders at an empty namespace.
+**Before deploying with wrangler: put the real KV id in `wrangler.toml`.** The file ships with a placeholder:
+
+```toml
+[[kv_namespaces]]
+binding = "ORDERS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+```
+
+1. In Cloudflare, open **Storage & Databases → KV** and click the **ORDERS** namespace (the one bound to the Worker in step 3). Copy its **ID**, a 32-character code like `0f2ac74b498b48028cb68387c421e279`. From the command line, `npx wrangler kv namespace list` shows the same id.
+2. Replace `REPLACE_WITH_KV_NAMESPACE_ID` with it and save. Don't create a new namespace: a new one is empty, and orders would seem to disappear.
+3. Now run `npx wrangler deploy` in `worker/`.
+
+A deploy with the placeholder fails with an error about the KV namespace, and nothing changes. `keep_vars = true` in `wrangler.toml` keeps the text variables you added in the dashboard (like `PAYPAL_CLIENT_ID`); secrets are never changed by a deploy.
 
 Then redeploy the Worker, either way:
 - **With wrangler (recommended):** `cd worker && npx wrangler deploy`. This applies the binding, the migration and the cron from `wrangler.toml` in one go. Pushing to `main` does the same through `.github/workflows/worker.yml` when the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets are set.
@@ -149,7 +161,7 @@ Check: the Worker's address shows `"auctions": true` on the health page once `RE
 
 ### 9d. Running an auction
 
-Studio → **+ New post** → switch on **Auction**, then set the starting bid, bid step, end time (your local time) and an optional reserve. The piece appears in **Auctions** above the shop, not in the cart. **Studio → Auctions** shows every bidder's name, email, amount and time, and has **Close now** and **Offer to next bidder**. The winner gets an email with a link to pay within 48 hours. If they don't pay, the hourly cron cancels their order and tells you on WhatsApp; then use **Offer to next bidder**.
+Studio → **+ New post** → switch on **Auction**, then set the starting bid, bid step, end time (your local time) and an optional reserve. The piece appears in **Auctions** above the shop, not in the cart. **Studio → Auctions** shows every bidder's name, email, amount and time, and has **Close now** and **Offer to next bidder**. The winner gets an email with a private link to pay within 48 hours (it isn't a public PayPal.me link, so only the winner can pay the order). If they don't pay, the hourly cron cancels their order and tells you on WhatsApp; then use **Offer to next bidder**.
 
 ## 10. Switching to automatic PayPal checkout (PayPal Business + REST app)
 

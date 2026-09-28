@@ -20,7 +20,8 @@
 //   PATCH /api/admin/orders/:key     Update an order: status (awaiting/new/packed/shipped/cancelled), tracking, note.
 //   GET  /auth, /callback            "Continue with GitHub" login for the admin (Decap/Sveltia-compatible).
 //   GET  /                           Health check: shows which features are configured.
-//   Cron (hourly)                    Cancels orders still unpaid after 48 hours (PayPal.me: stock goes back on sale).
+//   Cron (hourly)                    Reminds Sruthi about unpaid PayPal.me orders at 36 hours; cancels orders still
+//                                    unpaid after 48 hours (PayPal.me: stock goes back on sale).
 //
 // Settings (Cloudflare → Worker → Settings → Variables and Secrets). Secrets are marked (secret).
 //   ALLOWED_ORIGINS            https://www.sruthiarts.com,https://sruthiarts.com   (comma-separated)
@@ -886,16 +887,12 @@ async function awardAuction(env, cfg, offer) {
   const ship = shippingOf(settings);
   const payUrl = `${shopUrl(env)}/#pay/${number}/${order.payToken}`;
   const totals = [["Canada", ship.CA], ["USA", ship.US], ["rest of the world", ship.intl]].map(([k, fee]) => `${k} ${fmtMoney(offer.amount + fee, currency)}`);
-  const user = paypalMeUser(settings.paypal);
-  const meLinks = payModeFor(env, settings) === "paypalme" && user
-    ? `\n\nOr pay straight on PayPal (then reply with your address):\n${[["Canada", ship.CA], ["USA", ship.US], ["Rest of the world", ship.intl], ...(ship.pickup ? [["Pickup", 0]] : [])].map(([k, fee]) => `${k}: https://www.paypal.me/${encodeURIComponent(user)}/${money(offer.amount + fee)}${currency}`).join("\n")}`
-    : "";
   const deadline = new Date(order.payBy).toUTCString().replace(/:\d\d GMT$/, " GMT");
   const intro = offer.rank === 1
     ? `Congratulations! You won the auction for “${cfg.title}” with your bid of ${fmtMoney(offer.amount, currency)}.`
     : `Good news: “${cfg.title}” is now offered to you at your bid of ${fmtMoney(offer.amount, currency)}, because the winning bidder didn't complete payment.`;
   await quietly(sendEmail(env, offer.email, offer.rank === 1 ? `You won “${cfg.title}” — please pay within 48 hours` : `“${cfg.title}” is yours if you'd like it`,
-    `Hi ${offer.name},\n\n${intro}\n\nPlease pay within 48 hours (by ${deadline}). Choose delivery or pickup and pay here:\n${payUrl}\n\nWith delivery: ${totals.join(" · ")}.${ship.pickup ? ` Pickup is free: ${fmtMoney(offer.amount, currency)}.` : ""}${meLinks}\n\nYour order number is ${number}.\n\nThank you for supporting my art!\nSruthi`), "winner email");
+    `Hi ${offer.name},\n\n${intro}\n\nPlease pay within 48 hours (by ${deadline}). Choose delivery or pickup and pay here:\n${payUrl}\n\nWith delivery: ${totals.join(" · ")}.${ship.pickup ? ` Pickup is free: ${fmtMoney(offer.amount, currency)}.` : ""}\n\nThis link is just for you, so please don't share it.\n\nYour order number is ${number}.\n\nThank you for supporting my art!\nSruthi`), "winner email");
   await quietly(notifyText(env, [`Auction ${offer.rank === 1 ? "won" : `offered to bidder #${offer.rank}`}: ${cfg.title}`, `${fmtMoney(offer.amount, currency)} by ${offer.name} (${offer.email})`, `Order ${number}, awaiting payment until ${deadline}`, stock.ok ? "Piece marked sold." : "Piece NOT marked sold — check the studio."]), "whatsapp");
   return { number };
 }
@@ -1048,12 +1045,13 @@ async function payCapture(env, request, number, ctx) {
 }
 
 // ---------- Hourly cron: unpaid orders lapse after 48 hours ----------
+const REMIND_AFTER_MS = 36 * HOUR; // one WhatsApp reminder per unpaid PayPal.me order, 12 hours before it lapses
 // PayPal.me orders are cancelled and their pieces go back on sale (restock). Auction wins are cancelled too; the
 // piece stays sold so Sruthi can offer it to the next bidder from the studio.
 async function expireUnpaid(env) {
-  if (!env.ORDERS) return { released: [], lapsed: [] };
+  if (!env.ORDERS) return { released: [], lapsed: [], reminded: [] };
   const now = Date.now();
-  const released = [], lapsed = [];
+  const released = [], lapsed = [], reminded = [];
   let cursor;
   do {
     const page = await env.ORDERS.list({ prefix: "order:", limit: 1000, cursor });
@@ -1061,7 +1059,20 @@ async function expireUnpaid(env) {
       const o = JSON.parse((await env.ORDERS.get(k.name)) || "null");
       if (!o || o.status !== "awaiting") continue;
       const deadline = o.payBy ? Date.parse(o.payBy) : Date.parse(o.createdAt) + PAY_WINDOW_MS;
-      if (!(deadline <= now)) continue;
+      if (!(deadline <= now)) {
+        // 36 hours in: remind Sruthi once to check PayPal. remindedAt is saved only after the message goes out,
+        // so a failed send is tried again next hour, and never twice once it's sent.
+        if (o.payment !== "auction" && !o.remindedAt && now - Date.parse(o.createdAt) >= REMIND_AFTER_MS) {
+          const hours = Math.max(1, Math.round((deadline - now) / HOUR));
+          try {
+            await notifyText(env, [`Not paid yet: ${o.number}`, `${(o.items || []).map((l) => `${l.title} ×${l.qty}`).join(", ")} · ${fmtMoney(Number(o.amount), o.currency)} · ${(o.delivery && o.delivery.name) || (o.buyer && o.buyer.name) || ""}`, `Check PayPal and mark it paid in the studio, or it's cancelled in ${hours} hour${hours === 1 ? "" : "s"}.`]);
+            o.remindedAt = iso(now);
+            await env.ORDERS.put(k.name, JSON.stringify(o));
+            reminded.push(o.number);
+          } catch (e) { console.log("reminder failed", o.number, e.message); }
+        }
+        continue;
+      }
       if (o.payment === "auction") lapsed.push(o);
       else {
         for (const l of o.stockTaken ? o.items || [] : []) await restock(env, l.id, Number(l.qty) || 1, o.number).catch((e) => console.log("restock failed", e.message));
@@ -1081,7 +1092,7 @@ async function expireUnpaid(env) {
       lapsed.length ? `Auction wins not paid: ${lapsed.map(what).join("; ")} — offer them to the next bidder in the studio` : "",
     ]), "whatsapp");
   }
-  return { released: released.map((o) => o.number), lapsed: lapsed.map((o) => o.number) };
+  return { released: released.map((o) => o.number), lapsed: lapsed.map((o) => o.number), reminded };
 }
 
 // ---------- PayPal setup check (admin) ----------
