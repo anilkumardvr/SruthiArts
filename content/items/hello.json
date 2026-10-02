@@ -1,15 +1,21 @@
 {
-  "image": "/images/paintings/IMG_4577.webp",
-  "title": "Hello",
-  "category": "originals",
-  "description": "Hello world",
-  "price": 250,
+  "image": "images/paintings/hello-murjzzmu0.jpg",
+  "title": "Summer clock",
+  "category": "clocks",
+  "description": "Gatekeeping this clock all this summer",
+  "price": 30,
   "status": "available",
   "medium": "Acrylic on canvas",
-  "width": 22,
-  "height": 22,
-  "alt": "Hello",
+  "width": 30,
+  "height": 30,
+  "alt": "Hello I made this for this sunny summer theme",
   "date": "2026-09-22T19:35:00",
   "paypalLink": "https://www.paypal.me/SruthirikaKoora",
-  "quantity": 1
+  "quantity": 1,
+  "images": [
+    "images/paintings/hello-murjzzmu0.jpg",
+    "images/paintings/hello-murk00za1.jpg",
+    "images/paintings/hello-murk025y2.jpg",
+    "images/paintings/hello-murk03ib3.jpg"
+  ]
 }
