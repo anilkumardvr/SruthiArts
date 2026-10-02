@@ -8,8 +8,8 @@
   "alt": "bapu bomma",
   "description": "inspired by babu bomma",
   "price": 22,
-  "quantity": 1,
-  "status": "available",
+  "quantity": 0,
+  "status": "sold",
   "date": "2026-10-02T14:11:21",
   "auction": {
     "start": 22,
