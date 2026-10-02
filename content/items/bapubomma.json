@@ -1,0 +1,19 @@
+{
+  "title": "bapubomma",
+  "category": "originals",
+  "image": "images/paintings/bapubomma-mura4n470.webp",
+  "images": [
+    "images/paintings/bapubomma-mura4n470.webp"
+  ],
+  "alt": "bapu bomma",
+  "description": "inspired by babu bomma",
+  "price": 22,
+  "quantity": 1,
+  "status": "available",
+  "date": "2026-10-02T14:11:21",
+  "auction": {
+    "start": 22,
+    "increment": 5,
+    "endsAt": "2026-10-31T18:10:00.000Z"
+  }
+}
