@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { type Buyer, type Painting, type Shop, cartOn as cartOnFor, emptyBuyer, fetchStock, isAuction, makeMoney, mergeStock, stockOf } from "@/lib/shop";
+import { type Buyer, type Painting, type Shop, cartOn as cartOnFor, emptyBuyer, fetchStock, forgetBuyer, isAuction, loadSavedBuyer, makeMoney, mergeStock, saveBuyer, stockOf } from "@/lib/shop";
 
 // The cart lives in this browser only (localStorage). Prices, stock and delivery fees are checked again by the
 // checkout server, so nothing here decides what a buyer pays.
@@ -46,6 +46,12 @@ type Store = {
   setCartStep: (s: CartStep) => void;
   buyer: Buyer;
   setBuyer: React.Dispatch<React.SetStateAction<Buyer>>;
+  // returning buyers
+  savedBuyer: boolean;          // details were filled in from this browser
+  remember: boolean;
+  setRemember: (v: boolean) => void;
+  rememberBuyer: () => void;    // after an order: save (or forget) the details, clear the note
+  forgetSavedBuyer: () => void;
   applyStock: (stock?: { id: string; left: number }[]) => void;
 };
 
@@ -72,7 +78,16 @@ export function StoreProvider({ initial, children }: { initial: Shop; children: 
   const [cartOpen, setCartOpen] = React.useState(false);
   const [cartStep, setCartStep] = React.useState<CartStep>("cart");
   const [cartNotes, setCartNotes] = React.useState<string[]>([]);
-  const [buyer, setBuyer] = React.useState<Buyer>(emptyBuyer);
+  const [buyer, setBuyer] = React.useState<Buyer>(() => loadSavedBuyer() || emptyBuyer());
+  const [savedBuyer, setSavedBuyer] = React.useState(() => Boolean(loadSavedBuyer()));
+  const [remember, setRemember] = React.useState(true);
+  const buyerRef = React.useRef(buyer);
+  buyerRef.current = buyer;
+  const rememberBuyer = React.useCallback(() => {
+    if (remember) { saveBuyer(buyerRef.current); setSavedBuyer(true); } else { forgetBuyer(); setSavedBuyer(false); }
+    setBuyer((b) => ({ ...b, note: "" }));
+  }, [remember]);
+  const forgetSavedBuyer = React.useCallback(() => { forgetBuyer(); setSavedBuyer(false); setBuyer(emptyBuyer()); }, []);
 
   const currency = shop.artist.currency || "CAD";
   const money = React.useMemo(() => makeMoney(currency), [currency]);
@@ -190,7 +205,7 @@ export function StoreProvider({ initial, children }: { initial: Shop; children: 
     current, openPiece, closePiece,
     lines, count, subtotal, inCart, addToCart, setQty, removeLine, clearCart, bump,
     cartOpen, cartStep, cartNotes, openCart, closeCart, setCartStep,
-    buyer, setBuyer, applyStock,
+    buyer, setBuyer, savedBuyer, remember, setRemember, rememberBuyer, forgetSavedBuyer, applyStock,
   };
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

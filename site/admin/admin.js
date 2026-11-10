@@ -836,7 +836,10 @@
       const res = await fetch(`${checkoutApi()}/api/admin/orders/${encodeURIComponent(o.key)}`, { method: "PATCH", headers: { authorization: `Bearer ${S.token}`, "content-type": "application/json" }, body: JSON.stringify(patch) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Couldn't update the order");
-      Object.assign(o, patch); toast(msg); renderView(); renderNavBadges();
+      Object.assign(o, patch);
+      if (data.emailed) o.emailed = data.emailed;
+      const told = { paid: "customer emailed", shipped: "customer emailed", tracking: "tracking emailed to the customer" }[data.emailedNow];
+      toast(told ? `${msg} · ${told}` : msg); renderView(); renderNavBadges();
     } catch (e) { toast(e.message, "err"); }
   }
 

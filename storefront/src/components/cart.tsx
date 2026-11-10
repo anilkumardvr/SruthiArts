@@ -120,8 +120,9 @@ export function Field({ id, label, hint, children, className }: { id: string; la
 }
 
 function DetailsView() {
-  const { shop, buyer, setBuyer, setCartStep } = useStore();
+  const { shop, buyer, setBuyer, setCartStep, savedBuyer, remember, setRemember, forgetSavedBuyer } = useStore();
   const cfg = shipCfg(shop.artist);
+  const first = buyer.name.trim().split(/\s+/)[0];
   const [err, setErr] = React.useState<[keyof Buyer, string] | null>(null);
   const formRef = React.useRef<HTMLFormElement>(null);
   const method = cfg.pickup ? buyer.method : "ship";
@@ -152,6 +153,12 @@ function DetailsView() {
 
   return (
     <form ref={formRef} noValidate onSubmit={submit} className="space-y-6">
+      {savedBuyer && (
+        <p className="bg-secondary text-secondary-foreground rounded-xl px-3.5 py-2.5 text-sm">
+          Welcome back{first ? `, ${first}` : ""}! Your details from last time are filled in.{" "}
+          <button type="button" className="text-primary font-medium underline underline-offset-4" onClick={() => { forgetSavedBuyer(); setErr(null); }}>Not you? Clear them</button>
+        </p>
+      )}
       <RadioGroup
         aria-label="How would you like to get your order?"
         value={method}
@@ -207,6 +214,14 @@ function DetailsView() {
       <Field id="f-note" label="Note for Sruthi (optional)">
         <Textarea id="f-note" rows={2} maxLength={300} placeholder="Gift message, delivery instructions…" value={buyer.note} onChange={set("note")} />
       </Field>
+
+      <label className="flex cursor-pointer items-start gap-3 text-sm leading-snug">
+        <input type="checkbox" className="accent-primary mt-0.5 size-4 shrink-0" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+        <span className="grid gap-0.5">
+          <span>Remember my details on this device for next time</span>
+          <small className="text-muted-foreground text-xs">Untick on a shared or public computer.</small>
+        </span>
+      </label>
 
       <Totals withFee />
       {err && <p role="alert" className="text-destructive bg-destructive/5 rounded-xl px-3.5 py-2.5 text-sm">{err[1]}</p>}
@@ -391,11 +406,13 @@ function DoneView({ done }: { done: Done }) {
           <Button variant="link" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(r.number || ""); setCopied(true); } catch { /* clipboard blocked */ } }}>
             {copied ? <><Check /> Order number copied</> : `Copy order number ${r.number}`}
           </Button>
+          {r.emailed && <p className="text-muted-foreground text-sm">We've also emailed this link and your order details to {buyer.email.trim()}.</p>}
           <p className="text-muted-foreground text-sm">{pickup ? "Once the payment arrives, Sruthi will message you to arrange the pickup." : "Once the payment arrives, Sruthi will pack and ship your order to the address you gave."}</p>
         </>
       ) : (
         <>
-          <p className="text-sm">Paid {money(Number(r.total))} {r.currency || ""}. PayPal is emailing your receipt to {buyer.email.trim()}.</p>
+          <p className="text-sm">Paid {money(Number(r.total))} {r.currency || ""}. {r.emailed ? "Your order confirmation and PayPal's receipt are on their way to" : "PayPal is emailing your receipt to"} {buyer.email.trim()}.</p>
+          {r.emailed && <p className="text-muted-foreground text-sm">{pickup ? "" : "We'll email you again when it ships. "}Check your spam folder if it doesn't arrive in a few minutes.</p>}
           <p className="text-muted-foreground text-sm">{pickup ? "Sruthi has your order and will message you to arrange the pickup." : "Sruthi has your order and will ship it to the address you gave. Keep your order number handy if you have questions."}</p>
         </>
       )}
@@ -407,7 +424,7 @@ function DoneView({ done }: { done: Done }) {
 
 // ---------- Panel ----------
 export function CartPanel() {
-  const { shop, cartOpen, cartStep, cartNotes, closeCart, setCartStep, clearCart, applyStock } = useStore();
+  const { shop, cartOpen, cartStep, cartNotes, closeCart, setCartStep, clearCart, applyStock, rememberBuyer } = useStore();
   const isPhone = useIsPhone();
   const [done, setDone] = React.useState<Done | null>(null);
   const bodyRef = React.useRef<HTMLDivElement>(null);
@@ -415,6 +432,8 @@ export function CartPanel() {
   React.useEffect(() => { if (cartStep !== "done") setDone(null); }, [cartStep]);
 
   const finish = (d: Done) => {
+    // DoneView reads buyer.email, which stays; only the note is cleared for next time.
+    rememberBuyer();
     applyStock(d.r.stock);
     clearCart();
     setDone(d);
