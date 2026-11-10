@@ -49,3 +49,13 @@ crons = ["0 * * * *"]
 # Secrets are never stored in this file. Set them with `npx wrangler secret put NAME` or in the dashboard:
 #   GITHUB_TOKEN, PAYPAL_CLIENT_SECRET, GITHUB_OAUTH_CLIENT_SECRET, RESEND_API_KEY, BIDDER_SECRET,
 #   CALLMEBOT_PHONE + CALLMEBOT_APIKEY  (or WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TO)
+
+# Pull request previews (Cloudflare Workers Builds runs `npx wrangler preview` for every branch except main).
+# A preview gets only what is listed here, never the production settings above. It has no orders KV, no
+# auctions, no secrets and no cron, so it can't touch real orders, stock, payments or emails. It only proves that
+# the Worker uploads and starts. Production deploys from main ignore this block.
+[previews]
+
+[previews.vars]
+PAYPAL_ENV = "sandbox"
+SHOP_URL = "https://www.sruthiarts.com"
