@@ -20,7 +20,7 @@ GITHUB_REPO = "anilkumardvr/SruthiArts"
 GITHUB_BRANCH = "main"
 PAYPAL_ENV = "sandbox"          # switch to "live" after a successful test purchase
 SHOP_URL = "https://www.sruthiarts.com"   # links in auction emails (winner pay page, "bid again")
-# RESEND_FROM = "Sruthi Arts <auctions@sruthiarts.com>"   # sender for auction emails; the domain must be verified in Resend
+RESEND_FROM = "Sruthi Arts <hello@sruthiarts.com>"   # sender for order and auction emails; any address on the domain verified in Resend
 # PAYPAL_CLIENT_ID = ""         # public; set here or in the dashboard
 # GITHUB_OAUTH_CLIENT_ID = ""   # public; optional one-click admin login
 
