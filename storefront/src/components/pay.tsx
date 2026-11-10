@@ -12,7 +12,7 @@ import { PayPalIcon } from "@/components/icons";
 import { Field, loadPayPal } from "@/components/cart";
 import { petals } from "@/components/effects";
 import {
-  type Buyer, ApiError, COUNTRIES, PROVINCES, STATES, api, countryName, deliveryPayload, emptyBuyer, getJson, makeMoney, postJson, validCheckoutApi, validateBuyer,
+  type Buyer, ApiError, COUNTRIES, PROVINCES, STATES, api, countryName, deliveryPayload, emptyBuyer, getJson, loadSavedBuyer, makeMoney, postJson, validCheckoutApi, validateBuyer,
 } from "@/lib/shop";
 import { cn } from "@/lib/utils";
 import { useIsPhone } from "@/hooks/use-media-query";
@@ -32,7 +32,12 @@ function PayBody({ number, token, info, onDone }: { number: string; token: strin
   const { shop } = useStore();
   const money = React.useMemo(() => makeMoney(info.currency), [info.currency]);
   const a = shop.artist;
-  const [b, setB] = React.useState<Buyer>(() => ({ ...emptyBuyer(), name: info.name || "", email: info.email }));
+  // A winner who has bought here before (same email, same browser) gets their saved address filled in.
+  const [b, setB] = React.useState<Buyer>(() => {
+    const saved = loadSavedBuyer();
+    const same = saved && saved.email.trim().toLowerCase() === String(info.email || "").trim().toLowerCase();
+    return { ...emptyBuyer(), ...(same && saved ? saved : {}), name: (same && saved?.name) || info.name || "", email: info.email };
+  });
   const [err, setErr] = React.useState<[keyof Buyer, string] | null>(null);
   const [stage, setStage] = React.useState<"form" | "pay">("form");
   const [payUrl, setPayUrl] = React.useState("");

@@ -356,16 +356,18 @@ async function placeRequest(env, request, ctx) {
     if (r.title) l.title = r.title;
     stock.push({ id: l.id, left: r.ok ? r.left : null, error: r.ok ? "" : r.error });
   }
+  const payUrl = `https://www.paypal.me/${encodeURIComponent(user)}/${total}${currency}`;
   const order = {
     number, orderId: number, payment: "paypalme", items: lines, subtotal, shipping, amount: total, currency, delivery,
-    addressText: addressText(delivery), buyer: { name: delivery.name, email: delivery.email }, stock,
+    addressText: addressText(delivery), buyer: { name: delivery.name, email: delivery.email }, stock, payUrl,
     stockTaken: stock.every((x) => x.left !== null), status: "awaiting", tracking: "", createdAt: new Date(now).toISOString(),
   };
   const key = `order:${String(9999999999999 - now).padStart(13, "0")}:${number.replace(/[^A-Z0-9]/g, "")}`;
   await env.ORDERS.put(key, JSON.stringify(order));
   await env.ORDERS.put(`ordnum:${number}`, key);
   ctx.waitUntil(notifyWhatsApp(env, order).catch((e) => console.log("whatsapp failed", e.message)));
-  return json({ ok: true, number, total: Number(total), currency, payUrl: `https://www.paypal.me/${encodeURIComponent(user)}/${total}${currency}`, items: lines.map((l) => ({ id: l.id, title: l.title, qty: l.qty })), method: delivery.method, stock });
+  ctx.waitUntil(emailQuietly(env, key, order, "placed"));
+  return json({ ok: true, number, total: Number(total), currency, payUrl, items: lines.map((l) => ({ id: l.id, title: l.title, qty: l.qty })), method: delivery.method, stock, emailed: Boolean(env.RESEND_API_KEY) });
 }
 
 // Short, readable order number, e.g. SA-K3F9QZ2B (time-based plus two random characters so it never repeats).
@@ -428,7 +430,8 @@ async function captureOrder(env, orderId, ctx) {
     ctx.waitUntil(env.ORDERS.delete(`pending:${orderId}`));
   }
   ctx.waitUntil(notifyWhatsApp(env, order).catch((e) => console.log("whatsapp failed", e.message)));
-  return json({ ok: true, orderId, number: order.number, items: lines.map((l) => ({ id: l.id, title: l.title, qty: l.qty })), total: order.amount, currency: order.currency, method: delivery.method, buyerName: delivery.name || order.buyer.name, stock });
+  if (env.ORDERS) ctx.waitUntil(emailQuietly(env, key, order, "paid"));
+  return json({ ok: true, orderId, number: order.number, items: lines.map((l) => ({ id: l.id, title: l.title, qty: l.qty })), total: order.amount, currency: order.currency, method: delivery.method, buyerName: delivery.name || order.buyer.name, stock, emailed: Boolean(env.RESEND_API_KEY && env.ORDERS) });
 }
 
 // ---------- WhatsApp ----------
@@ -518,7 +521,15 @@ async function updateOrder(env, request, key) {
     order.stockTaken = true;
   }
   await env.ORDERS.put(key, JSON.stringify(order));
-  return json({ key, ...order });
+  // Let the buyer know: payment received (PayPal.me marked paid), shipped, or tracking added after shipping.
+  // Pickups get no shipping email. The studio's toast says when one went out.
+  const ship = order.delivery && order.delivery.method !== "pickup";
+  const kind = patch.status === "new" && prev.status === "awaiting" ? "paid"
+    : patch.status === "shipped" && prev.status !== "shipped" && ship ? "shipped"
+    : order.status === "shipped" && ship && patch.tracking && patch.tracking !== prev.tracking && (order.emailed || {}).shipped ? "tracking"
+    : "";
+  const emailedNow = kind && (await emailQuietly(env, key, order, kind)) ? kind : "";
+  return json({ key, ...order, emailedNow });
 }
 
 // ---------- GitHub OAuth for the admin (Decap/Sveltia popup protocol) ----------
@@ -596,15 +607,115 @@ async function underLimit(env, key, limit, ttlSeconds) {
 // ---------- Email (Resend) ----------
 const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const textToHtml = (t) => `<div style="font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#3b1d2c;max-width:560px">${escHtml(t).split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, "<br>").replace(/(https:\/\/[^\s<]+)/g, '<a href="$1" style="color:#a8325e">$1</a>')}</p>`).join("")}</div>`;
-async function sendEmail(env, to, subject, text) {
+async function sendEmail(env, to, subject, text, replyTo = "") {
   if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not set");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({ from: env.RESEND_FROM || "Sruthi Arts <auctions@sruthiarts.com>", to: [to], subject, text, html: textToHtml(text) }),
+    body: JSON.stringify({ from: env.RESEND_FROM || "Sruthi Arts <auctions@sruthiarts.com>", to: [to], subject, text, html: textToHtml(text), ...(validEmail(replyTo) ? { reply_to: replyTo } : {}) }),
   });
   if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
+const validEmail = (v) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v || "").trim());
+
+// ---------- Order emails to buyers ----------
+// placed (PayPal.me: how to pay), paid, shipped (with tracking when there is one), tracking (added after shipping),
+// cancelled (unpaid after 48 hours). Each goes out once per order (order.emailed records when). Sending is
+// best-effort: a failed email never blocks or undoes an order. Needs RESEND_API_KEY; replies go to settings.email.
+const firstName = (o) => String((o.delivery && o.delivery.name) || (o.buyer && o.buyer.name) || "").trim().split(/\s+/)[0] || "there";
+const buyerEmail = (o) => String((o.delivery && o.delivery.email) || (o.buyer && o.buyer.email) || "").trim();
+const itemsText = (o) => (o.items || []).map((l) => `• ${l.title} × ${l.qty}${Number(l.price) > 0 ? ` — ${fmtMoney(Number(l.price) * Number(l.qty || 1), o.currency)}` : ""}`).join("\n");
+function totalsText(o) {
+  const pickup = o.delivery && o.delivery.method === "pickup";
+  return [
+    `Items: ${fmtMoney(Number(o.subtotal || 0), o.currency)}`,
+    `${pickup ? "Pickup" : "Delivery"}: ${Number(o.shipping) > 0 ? fmtMoney(Number(o.shipping), o.currency) : "Free"}`,
+    `Total: ${fmtMoney(Number(o.amount || 0), o.currency)} ${o.currency || ""}`.trim(),
+  ].join("\n");
+}
+const countryLabel = (c) => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(c) || c; } catch { return c; } };
+function whereText(o) {
+  const d = o.delivery || {};
+  if (d.method === "pickup") return "Pickup: I'll message you to arrange a time and place.";
+  const a = d.address;
+  if (!a) return "";
+  return `Delivering to:\n${[d.name, a.line1, a.line2, [a.city, a.region, a.postal].filter(Boolean).join(" "), countryLabel(a.country)].filter(Boolean).join("\n")}`;
+}
+// A link for the buyer: the tracking text itself if it's a link, Canada Post for its number formats, else none.
+function trackingUrl(t) {
+  const s = String(t || "").trim();
+  if (/^https:\/\/\S+$/i.test(s)) return s;
+  const code = s.replace(/\s+/g, "").toUpperCase();
+  return /^([A-Z]{2}\d{9}CA|\d{16})$/.test(code) ? `https://www.canadapost-postescanada.ca/track-reperage/en#/search?searchFor=${code}` : "";
+}
+function trackingText(o) {
+  const t = String(o.tracking || "").trim();
+  if (!t) return "";
+  const url = trackingUrl(t);
+  return url && url !== t ? `Tracking number: ${t}\nTrack it here: ${url}` : url ? `Track it here: ${url}` : `Tracking number: ${t}`;
+}
+function orderEmail(o, kind, canReply = false) {
+  const hi = `Hi ${firstName(o)},`;
+  const sign = "Thank you for supporting my art!\nSruthi";
+  const ref = `Order number: ${o.number}`;
+  const total = `${fmtMoney(Number(o.amount || 0), o.currency)} ${o.currency || ""}`.trim();
+  const many = (o.items || []).reduce((t, l) => t + Number(l.qty || 1), 0) > 1;
+  const pickup = o.delivery && o.delivery.method === "pickup";
+  const parts = {
+    placed: [`Order ${o.number}: please pay ${total} to confirm it`, [
+      hi,
+      `Thank you for your order! ${many ? "Your pieces are" : "Your piece is"} reserved for you for 48 hours.`,
+      `To confirm the order, pay ${total} on PayPal here:\n${o.payUrl || ""}\n\nPlease write ${o.number} in the PayPal note so I can match your payment.`,
+      itemsText(o), totalsText(o), whereText(o),
+      "If the payment doesn't arrive within 48 hours, the order is cancelled and the pieces go back on sale.",
+      ref, sign,
+    ]],
+    paid: [`Order ${o.number} confirmed — thank you!`, [
+      hi,
+      `Your payment of ${total} has arrived and your order is confirmed.${o.payment === "paypalme" ? "" : " PayPal sends its own receipt as well."}`,
+      itemsText(o), totalsText(o), whereText(o),
+      pickup ? "I'll message you soon to arrange the pickup." : "I'll pack it with care and email you again as soon as it ships.",
+      ref, sign,
+    ]],
+    shipped: [`Your order ${o.number} is on its way`, [
+      hi,
+      `Good news: your order has shipped!`,
+      trackingText(o) || "I'll send the tracking number if there is one.",
+      itemsText(o), whereText(o),
+      ref, sign,
+    ]],
+    tracking: [`Tracking for your order ${o.number}`, [hi, "Here's the tracking for your order:", trackingText(o), ref, sign]],
+    cancelled: [`Order ${o.number} was cancelled`, [
+      hi,
+      `Your order was cancelled because the payment didn't arrive within 48 hours, so ${many ? "the pieces are" : "the piece is"} no longer reserved. Nothing was charged.`,
+      itemsText(o),
+      canReply ? "If you've just paid or would still like it, simply reply to this email." : "If you've just paid or would still like it, please message me on Instagram.",
+      ref, "Sruthi",
+    ]],
+  }[kind];
+  return { subject: parts[0], text: parts[1].filter(Boolean).join("\n\n") };
+}
+// Sends one order email and records it on the saved order (re-read first, so a studio change made meanwhile is
+// kept). Returns true when an email went out.
+async function emailBuyer(env, key, o, kind) {
+  if (!env.RESEND_API_KEY || !validEmail(buyerEmail(o))) return false;
+  const tag = kind === "tracking" ? `tracking:${String(o.tracking || "").trim()}` : kind;
+  if ((o.emailed || {})[tag]) return false;
+  const settings = await getSettings(env).catch(() => ({}));
+  const { subject, text } = orderEmail(o, kind, validEmail(settings.email));
+  await sendEmail(env, buyerEmail(o), subject, text, settings.email);
+  const sent = { [tag]: iso(Date.now()) };
+  // The shipped email already carries the tracking that was set, so don't send it again on its own.
+  if (kind === "shipped" && String(o.tracking || "").trim()) sent[`tracking:${String(o.tracking).trim()}`] = sent[tag];
+  o.emailed = { ...(o.emailed || {}), ...sent };
+  if (env.ORDERS && key) {
+    const fresh = JSON.parse((await env.ORDERS.get(key)) || "null") || o;
+    fresh.emailed = { ...(fresh.emailed || {}), ...sent };
+    await env.ORDERS.put(key, JSON.stringify(fresh));
+  }
+  return true;
+}
+const emailQuietly = (env, key, o, kind) => emailBuyer(env, key, o, kind).catch((e) => { console.log(`${kind} email failed`, o.number, e.message); return false; });
 
 // A short WhatsApp note to Sruthi (auctions, released orders). CallMeBot takes free text; the Cloud API template
 // has four variables, so the lines are folded into those.
@@ -1040,7 +1151,8 @@ async function payCapture(env, request, number, ctx) {
     payer: { name: [payer.name && payer.name.given_name, payer.name && payer.name.surname].filter(Boolean).join(" "), email: payer.email_address || "", payerId: payer.payer_id || "", captureId: capture.id },
   });
   await env.ORDERS.put(key, JSON.stringify(order));
-  ctx.waitUntil(quietly(notifyText(env, [`Auction paid: ${order.items[0].title}`, `${fmtMoney(Number(order.amount), order.currency)} by ${order.payer.name || order.buyer.name} (${order.payer.email})`, order.delivery.method === "pickup" ? "Pickup — message them to arrange" : `Ship to: ${order.addressText}`, `Order ${number}`]), "whatsapp"));
+  ctx.waitUntil(emailQuietly(env, key, order, "paid"));
+  ctx.waitUntil(quietly(notifyText(env, [`Auction paid:${order.items[0].title}`, `${fmtMoney(Number(order.amount), order.currency)} by ${order.payer.name || order.buyer.name} (${order.payer.email})`, order.delivery.method === "pickup" ? "Pickup — message them to arrange" : `Ship to: ${order.addressText}`, `Order ${number}`]), "whatsapp"));
   return json({ ok: true, number, total: order.amount, currency: order.currency, method: order.delivery.method });
 }
 
@@ -1081,6 +1193,7 @@ async function expireUnpaid(env) {
       }
       Object.assign(o, { status: "cancelled", cancelReason: "unpaid after 48 hours", updatedAt: iso(now) });
       await env.ORDERS.put(k.name, JSON.stringify(o));
+      await emailQuietly(env, k.name, o, "cancelled");
     }
     cursor = page.list_complete ? null : page.cursor;
   } while (cursor);

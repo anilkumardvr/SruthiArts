@@ -20,7 +20,7 @@ GITHUB_REPO = "anilkumardvr/SruthiArts"
 GITHUB_BRANCH = "main"
 PAYPAL_ENV = "sandbox"          # switch to "live" after a successful test purchase
 SHOP_URL = "https://www.sruthiarts.com"   # links in auction emails (winner pay page, "bid again")
-# RESEND_FROM = "Sruthi Arts <auctions@sruthiarts.com>"   # sender for auction emails; the domain must be verified in Resend
+RESEND_FROM = "Sruthi Arts <hello@sruthiarts.com>"   # sender for order and auction emails; any address on the domain verified in Resend
 # PAYPAL_CLIENT_ID = ""         # public; set here or in the dashboard
 # GITHUB_OAUTH_CLIENT_ID = ""   # public; optional one-click admin login
 
@@ -49,3 +49,13 @@ crons = ["0 * * * *"]
 # Secrets are never stored in this file. Set them with `npx wrangler secret put NAME` or in the dashboard:
 #   GITHUB_TOKEN, PAYPAL_CLIENT_SECRET, GITHUB_OAUTH_CLIENT_SECRET, RESEND_API_KEY, BIDDER_SECRET,
 #   CALLMEBOT_PHONE + CALLMEBOT_APIKEY  (or WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_TO)
+
+# Pull request previews (Cloudflare Workers Builds runs `npx wrangler preview` for every branch except main).
+# A preview gets only what is listed here, never the production settings above. It has no orders KV, no
+# auctions, no secrets and no cron, so it can't touch real orders, stock, payments or emails. It only proves that
+# the Worker uploads and starts. Production deploys from main ignore this block.
+[previews]
+
+[previews.vars]
+PAYPAL_ENV = "sandbox"
+SHOP_URL = "https://www.sruthiarts.com"

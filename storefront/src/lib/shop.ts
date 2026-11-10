@@ -191,6 +191,32 @@ export type Buyer = {
 };
 export const emptyBuyer = (): Buyer => ({ method: "ship", name: "", email: "", phone: "", country: "CA", line1: "", line2: "", city: "", region: "", postal: "", note: "" });
 
+// Returning buyers: name, contact and address are kept in this browser only (never the note), like a saved
+// address on a big shop. The checkout server still checks everything, so nothing here decides what anyone pays.
+const BUYER_KEY = "sruthiarts.buyer";
+export function loadSavedBuyer(): Buyer | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(BUYER_KEY) || "null");
+    if (!raw || typeof raw !== "object") return null;
+    const s = (v: unknown) => (typeof v === "string" ? v.slice(0, 300) : "");
+    const b: Buyer = {
+      method: raw.method === "pickup" ? "pickup" : "ship",
+      name: s(raw.name), email: s(raw.email), phone: s(raw.phone),
+      country: /^[A-Z]{2}$/.test(s(raw.country)) ? s(raw.country) : "CA",
+      line1: s(raw.line1), line2: s(raw.line2), city: s(raw.city), region: s(raw.region), postal: s(raw.postal), note: "",
+    };
+    return b.name || b.email ? b : null;
+  } catch {
+    return null;
+  }
+}
+export function saveBuyer(b: Buyer) {
+  try { localStorage.setItem(BUYER_KEY, JSON.stringify({ ...b, note: undefined })); } catch { /* private mode */ }
+}
+export function forgetBuyer() {
+  try { localStorage.removeItem(BUYER_KEY); } catch { /* private mode */ }
+}
+
 export const feeFor = (a: Artist, b: Buyer) => { const c = shipCfg(a); return b.method === "pickup" ? 0 : b.country === "CA" ? c.CA : b.country === "US" ? c.US : c.intl; };
 
 const COUNTRY_CODES = "AD AE AF AG AI AL AM AO AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BW BY BZ CA CD CF CG CH CI CK CL CM CN CO CR CV CW CY CZ DE DJ DK DM DO DZ EC EE EG ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GT GU GW GY HK HN HR HT HU ID IE IL IM IN IS IT JE JM JO JP KE KG KH KI KM KN KR KW KY KZ LA LB LC LI LK LR LS LT LU LV MA MC MD ME MF MG MH MK ML MN MO MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RW SA SB SC SE SG SH SI SK SL SM SN SO SR ST SV SX SZ TC TD TG TH TJ TL TM TN TO TR TT TV TW TZ UA UG US UY UZ VA VC VE VG VI VN VU WF WS YT ZA ZM ZW".split(" ");
@@ -247,6 +273,7 @@ export type OrderResult = {
   payUrl?: string;
   items?: { title: string; qty: number }[];
   stock?: { id: string; left: number }[];
+  emailed?: boolean; // the server sends the buyer an order email
 };
 
 export const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;

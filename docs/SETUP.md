@@ -115,7 +115,7 @@ The Worker works at its `*.workers.dev` address, but a custom domain looks tidie
 
 Auctions run on the same Worker: one small **Durable Object** per auction keeps the bids and takes them one at a time, an alarm closes it at the end time, and an hourly **Cron Trigger** handles unpaid orders: at 36 hours Sruthi gets one WhatsApp reminder per unpaid PayPal.me order, and at 48 hours it's cancelled. Bidders confirm their email with a 6-digit code sent by **Resend**. Everything works on the `workers.dev` address; no custom domain is needed.
 
-### 9a. Resend (email codes, outbid and winner emails)
+### 9a. Resend (order emails, bidder codes, outbid and winner emails)
 
 1. Create a free account at **resend.com** (3,000 emails a month).
 2. **Domains → Add domain** → `sruthiarts.com`. Resend lists a few DNS records (an MX and TXT record for `send`, and a DKIM TXT record).
@@ -123,7 +123,11 @@ Auctions run on the same Worker: one small **Durable Object** per auction keeps 
 4. **API Keys → Create API key**, permission **Sending access**, domain `sruthiarts.com`. Copy it; it's shown once.
 5. Worker → **Settings → Variables and Secrets** → add **Secret** `RESEND_API_KEY` with that key.
 
-Emails come from `Sruthi Arts <auctions@sruthiarts.com>`. To use another address on the same verified domain, add a text variable `RESEND_FROM`, e.g. `Sruthi Arts <hello@sruthiarts.com>`. Replies go nowhere unless that address exists (Cloudflare **Email Routing** can forward it to Sruthi's inbox).
+The same key also sends **order emails to buyers**: how to pay (PayPal.me orders), "payment received / order confirmed", "your order has shipped" with the tracking number (Canada Post numbers become a tracking link), tracking added later, and "cancelled, unpaid after 48 hours". Each goes out once per order; the studio toast says "customer emailed" when one is sent. Pickups get no shipping email. Without `RESEND_API_KEY` the shop works the same, just without emails.
+
+Replies to order emails go to the **Email** in Studio → Settings, so fill that in with Sruthi's inbox. If it's empty, emails point buyers to Instagram instead.
+
+Emails come from `Sruthi Arts <auctions@sruthiarts.com>`. For order emails a friendlier sender is nicer, e.g. `RESEND_FROM` = `Sruthi Arts <hello@sruthiarts.com>`. To use another address on the same verified domain, add a text variable `RESEND_FROM`, e.g. `Sruthi Arts <hello@sruthiarts.com>`. Replies go nowhere unless that address exists (Cloudflare **Email Routing** can forward it to Sruthi's inbox).
 
 ### 9b. BIDDER_SECRET
 

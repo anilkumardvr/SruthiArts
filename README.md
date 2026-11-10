@@ -49,6 +49,8 @@ Each save is a commit to `main`. The top bar shows **Publishing…** and then **
 
 Each item has a **quantity**. The shop shows "N available" or "Sold out". With checkout switched on, a PayPal purchase lowers the quantity automatically and marks the item Sold at 0, the order appears in the studio, and Sruthi gets a WhatsApp alert. Until then, buyers use the PayPal.me link or Instagram, and stock is updated by hand in the studio.
 
+Buyers get emails from the checkout server (Resend): how to pay, order confirmed, shipped with tracking, and cancelled if unpaid after 48 hours. Returning buyers find their name and address filled in (saved in their browser only, with a "Not you? Clear them" link and an opt-out tick box).
+
 Setup steps: [docs/SETUP.md](docs/SETUP.md).
 
 ### What shows up right away, and what waits for a deploy
